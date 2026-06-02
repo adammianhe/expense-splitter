@@ -1,9 +1,12 @@
 "use client"
 
 import Link from "next/link"
+import AppHeader from "@/components/AppHeader"
 
 export default function HomePage() {
   return (
+    <>
+    <AppHeader />
     <main className="min-h-screen flex flex-col items-center justify-center p-6 bg-gray-50">
       <div className="max-w-md w-full text-center space-y-6">
         <h1 className="text-4xl font-bold text-gray-900">
@@ -25,5 +28,6 @@ export default function HomePage() {
         </p>
       </div>
     </main>
+    </>
   )
 }

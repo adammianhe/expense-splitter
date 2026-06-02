@@ -8,6 +8,7 @@ import Button from "@/components/ui/Button"
 import ItemsEditor from "./ItemsEditor"
 import SharePickerModal from "./SharePickerModal"
 import ReceiptManager from "./ReceiptManager"
+import { Link2, Pencil, Banknote, Bell, Lock, AlertTriangle, Camera, Share2, Plus, X, Check } from "lucide-react"
 
 type Props = {
   receipts: import("@/types").Receipt[]
@@ -489,22 +490,22 @@ export default function OwnerDashboard({
       if (bill.isVerified && bill.amountOwed === 0) {
         return { text: "✅ Owner — confirmed all", color: "bg-purple-100 text-purple-800" }
       }
-      return { text: "🤔 Owner — has unconfirmed items", color: "bg-orange-100 text-orange-800" }
+      return { text: "Owner — has unconfirmed items", color: "bg-orange-100 text-orange-800" }
     }
     if (!bill.hasTicked) {
-      return { text: "🤔 Hasn't ticked yet", color: "bg-gray-100 text-gray-600" }
-    }
+  return { text: "Hasn't ticked yet", color: "bg-gray-100 text-gray-600" }
+}
     if (bill.hasPendingShares && !bill.payment) {
       return { text: "⏳ Has pending shares", color: "bg-yellow-100 text-yellow-800" }
     }
     if (!bill.payment) {
-      return { text: "💸 Ticked, not paid yet", color: "bg-orange-100 text-orange-800" }
+      return { text: "Ticked, not paid yet", color: "bg-orange-100 text-orange-800" }
     }
     if (bill.isVerified && bill.amountOwed === 0) {
       return { text: "✅ Paid in full", color: "bg-green-100 text-green-800" }
     }
     if (bill.isVerified && bill.amountOwed > 0) {
-      return { text: "💰 Partially paid", color: "bg-blue-100 text-blue-800" }
+      return { text: "Partially paid", color: "bg-blue-100 text-blue-800" }
     }
     if (bill.isClaimed) {
       return { text: "⏳ Pending verification", color: "bg-yellow-100 text-yellow-800" }
@@ -533,8 +534,18 @@ export default function OwnerDashboard({
         </div>
 
         <Button variant="secondary" onClick={handleShare} className="w-full text-sm">
-          {copied ? "✓ Link copied!" : "📋 Share Link to Friends"}
-        </Button>
+  {copied ? (
+    <span className="flex items-center justify-center gap-2">
+      <Check size={16} />
+      Link copied
+    </span>
+  ) : (
+    <span className="flex items-center justify-center gap-2">
+      <Link2 size={16} />
+      Share Link to Friends
+    </span>
+  )}
+</Button>
 
         {/* COLLECTION SUMMARY */}
         <div className="bg-white border border-gray-200 rounded-xl p-4 space-y-3">
@@ -568,7 +579,7 @@ export default function OwnerDashboard({
             </div>
           </div>
         </div>
-        
+
         <ReceiptManager
   receipts={receipts}
   canManage={true}
@@ -583,7 +594,7 @@ export default function OwnerDashboard({
               Your Bill ({participant.name})
             </div>
             <div className="text-xs text-gray-400 mt-1">
-              How many did you have?
+              What did you have?
             </div>
           </div>
 
@@ -772,10 +783,11 @@ export default function OwnerDashboard({
                   )}
 
                   {lockedByOthers && (
-                    <div className="text-xs mt-1 text-gray-400 font-medium">
-                      🔒 Fully claimed by others
-                    </div>
-                  )}
+  <div className="text-xs mt-1 text-gray-400 font-medium flex items-center gap-1">
+    <Lock size={12} />
+    Fully claimed by others
+  </div>
+)}
                 </div>
               )
             })}
@@ -994,22 +1006,28 @@ export default function OwnerDashboard({
                       {bill.amountOwed > 0 && !bill.isClaimed && (
                         <>
                           <Button
-                            variant="secondary"
-                            onClick={() => handleMarkAsCash(bill)}
-                            disabled={isProcessing}
-                            className="flex-1 text-xs py-2"
-                          >
-                            💵 Mark Cash
-                          </Button>
+  variant="secondary"
+  onClick={() => handleMarkAsCash(bill)}
+  disabled={isProcessing}
+  className="flex-1 text-xs py-2"
+>
+  <span className="flex items-center justify-center gap-1.5">
+    <Banknote size={14} />
+    Mark Cash
+  </span>
+</Button>
                           <Button
-                            variant="ghost"
-                            onClick={() =>
-                              handleNudge(bill.participant.name, bill.amountOwed)
-                            }
-                            className="flex-1 text-xs py-2"
-                          >
-                            🔔 Nudge
-                          </Button>
+  variant="ghost"
+  onClick={() =>
+    handleNudge(bill.participant.name, bill.amountOwed)
+  }
+  className="flex-1 text-xs py-2"
+>
+  <span className="flex items-center justify-center gap-1.5">
+    <Bell size={14} />
+    Nudge
+  </span>
+</Button>
                         </>
                       )}
                     </div>

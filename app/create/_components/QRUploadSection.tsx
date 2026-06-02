@@ -2,6 +2,7 @@
 
 import { useState } from "react"
 import Button from "@/components/ui/Button"
+import { Camera } from "lucide-react"
 
 type Props = {
   file: File | null
@@ -37,8 +38,9 @@ export default function QRUploadSection({ file, onChange }: Props) {
             onChange={(e) => handleFile(e.target.files?.[0] || null)}
             className="hidden"
           />
-          <div className="text-gray-500 text-sm">
-            📷 Tap to upload QR code
+          <div className="text-sm text-gray-600 flex items-center justify-center gap-2">
+            <Camera size={16} />
+            Tap to upload QR code
           </div>
           <div className="text-gray-400 text-xs mt-1">
             Friends will scan this to pay you

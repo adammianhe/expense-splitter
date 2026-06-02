@@ -8,6 +8,7 @@ import TaxSection from "./_components/TaxSection"
 import QRUploadSection from "./_components/QRUploadSection"
 import Button from "@/components/ui/Button"
 import ReceiptUploadSection from "./_components/ReceiptUploadSection"
+import AppHeader from "@/components/AppHeader"
 
 export default function CreateSessionPage() {
   const {
@@ -29,9 +30,11 @@ export default function CreateSessionPage() {
   } = useCreateSession()
 
   return (
-    <main className="min-h-screen bg-gray-50 p-6">
-      <div className="max-w-md mx-auto space-y-6">
-        <h1 className="text-3xl font-bold text-gray-900">Create Session</h1>
+    <>
+      <AppHeader />
+      <main className="min-h-screen bg-gray-50 p-6">
+        <div className="max-w-md mx-auto space-y-6">
+          <h1 className="text-3xl font-bold text-gray-900">Create Session</h1>
 
         <SessionNameInput value={sessionName} onChange={setSessionName} />
 
@@ -60,5 +63,6 @@ export default function CreateSessionPage() {
         </Button>
       </div>
     </main>
+    </>
   )
 }

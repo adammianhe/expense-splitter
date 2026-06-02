@@ -15,6 +15,7 @@ import OwnerDashboard from "./_components/OwnerDashboard"
 import ToastContainer from "@/components/ui/ToastContainer"
 import { useReceipts } from "@/hooks/useReceipts"
 import ReceiptManager from "./_components/ReceiptManager"
+import AppHeader from "@/components/AppHeader"
 
 export default function SessionPage({ params }: { params: Promise<{ id: string }> }) {
   const { id: sessionId } = use(params)
@@ -158,6 +159,7 @@ if (data) {
 
   return (
     <>
+    <AppHeader />
       <ToastContainer toasts={toasts} onDismiss={dismissToast} />
 
       {!currentParticipant ? (

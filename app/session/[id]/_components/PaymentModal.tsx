@@ -3,6 +3,7 @@
 import { useState } from "react"
 import { Session } from "@/types"
 import Button from "@/components/ui/Button"
+import { QrCode, Banknote, AlertTriangle, Check } from "lucide-react"
 
 type Props = {
   session: Session
@@ -49,19 +50,21 @@ export default function PaymentModal({ session, amount, onConfirm, onClose }: Pr
         <div className="flex gap-2 bg-gray-100 p-1 rounded-lg">
           <button
             onClick={() => setMethod("qr")}
-            className={`flex-1 py-2 rounded-md text-sm font-medium transition ${
-              method === "qr" ? "bg-white shadow-sm" : "text-gray-500"
+            className={`flex-1 py-2 rounded-md text-sm font-medium transition flex items-center justify-center gap-1.5 ${
+              method === "qr" ? "bg-white shadow-sm text-gray-900" : "text-gray-500"
             }`}
           >
-            📱 QR Code
+            <QrCode size={14} />
+            QR Code
           </button>
           <button
             onClick={() => setMethod("cash")}
-            className={`flex-1 py-2 rounded-md text-sm font-medium transition ${
-              method === "cash" ? "bg-white shadow-sm" : "text-gray-500"
+            className={`flex-1 py-2 rounded-md text-sm font-medium transition flex items-center justify-center gap-1.5 ${
+              method === "cash" ? "bg-white shadow-sm text-gray-900" : "text-gray-500"
             }`}
           >
-            💵 Cash
+            <Banknote size={14} />
+            Cash
           </button>
         </div>
 
@@ -82,13 +85,17 @@ export default function PaymentModal({ session, amount, onConfirm, onClose }: Pr
               </p>
             </div>
           ) : (
-            <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-4 text-sm text-yellow-800">
-              ⚠️ The owner has not uploaded a QR code yet. Please ask the owner for payment details.
+            <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-4 text-sm text-yellow-800 flex items-start gap-2">
+              <AlertTriangle size={16} className="flex-shrink-0 mt-0.5" />
+              <span>The owner has not uploaded a QR code yet. Please ask the owner for payment details.</span>
             </div>
           )
         ) : (
-          <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 text-sm text-blue-800">
-            💵 Pay <strong>RM {amount.toFixed(2)}</strong> in cash to the owner, then click confirm below.
+          <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 text-sm text-blue-800 flex items-start gap-2">
+            <Banknote size={16} className="flex-shrink-0 mt-0.5" />
+            <span>
+              Pay <strong>RM {amount.toFixed(2)}</strong> in cash to the owner, then click confirm below.
+            </span>
           </div>
         )}
 
@@ -99,7 +106,16 @@ export default function PaymentModal({ session, amount, onConfirm, onClose }: Pr
           disabled={loading}
           className="w-full py-3"
         >
-          {loading ? "Saving..." : "I Have Paid ✓"}
+          <span className="flex items-center justify-center gap-2">
+            {loading ? (
+              "Saving..."
+            ) : (
+              <>
+                <Check size={16} />
+                I Have Paid
+              </>
+            )}
+          </span>
         </Button>
 
         <p className="text-xs text-gray-500 text-center">

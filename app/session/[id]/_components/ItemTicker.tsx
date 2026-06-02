@@ -7,6 +7,7 @@ import Button from "@/components/ui/Button"
 import PaymentModal from "./PaymentModal"
 import SharePickerModal from "./SharePickerModal"
 import ReceiptManager from "./ReceiptManager"
+import { Lock, Clock } from "lucide-react"
 
 type Props = {
   receipts: import("@/types").Receipt[]
@@ -329,7 +330,7 @@ export default function ItemTicker({
         {/* Items */}
         <div>
           <h2 className="text-sm font-medium text-gray-700 mb-2">
-            How many did you have?
+            What did you have?
           </h2>
           <div className="space-y-2">
             {items.map((item) => {
@@ -524,10 +525,11 @@ export default function ItemTicker({
                   )}
 
                   {lockedByOthers && (
-                    <div className="text-xs mt-1 text-gray-400 font-medium">
-                      🔒 Fully claimed by others
-                    </div>
-                  )}
+  <div className="text-xs mt-1 text-gray-400 font-medium flex items-center gap-1">
+    <Lock size={12} />
+    Fully claimed by others
+  </div>
+)}
                 </div>
               )
             })}
@@ -536,10 +538,11 @@ export default function ItemTicker({
 
         {/* Pending shares warning */}
         {itemsWithMyPendingShares.size > 0 && (
-          <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-3 text-sm text-yellow-800">
-            ⏳ Some shares are waiting for confirmation. Payment for those will be available once all confirm.
-          </div>
-        )}
+  <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-3 text-sm text-yellow-800 flex items-start gap-2">
+    <Clock size={16} className="flex-shrink-0 mt-0.5" />
+    <span>Some shares are waiting for confirmation. Payment for those will be available once all confirm.</span>
+  </div>
+)}
 
         {/* New unpaid bill */}
         {newUnpaidSubtotal > 0 && (
@@ -590,13 +593,13 @@ export default function ItemTicker({
 
         {/* All settled */}
         {hasPaid && newUnpaidSubtotal === 0 && (
-          <div className="bg-green-50 border border-green-200 rounded-xl p-4 text-center">
-            <div className="text-green-800 font-medium">🎉 You're all settled!</div>
-            <div className="text-green-600 text-sm mt-1">
-              Total paid: RM {Number(myPayment?.amount_paid || 0).toFixed(2)}
-            </div>
-          </div>
-        )}
+  <div className="bg-green-50 border border-green-200 rounded-xl p-4 text-center">
+    <div className="text-green-800 font-medium">You're all settled</div>
+    <div className="text-green-600 text-sm mt-1">
+      Total paid: RM {Number(myPayment?.amount_paid || 0).toFixed(2)}
+    </div>
+  </div>
+)}
       </div>
 
       {newTotalToPay > 0 && (

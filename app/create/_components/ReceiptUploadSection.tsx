@@ -1,6 +1,7 @@
 "use client"
 
 import { useRef } from "react"
+import { Camera } from "lucide-react"
 
 type Props = {
   files: File[]
@@ -61,9 +62,10 @@ export default function ReceiptUploadSection({ files, onChange }: Props) {
         onClick={() => inputRef.current?.click()}
         className="w-full p-6 border-2 border-dashed border-gray-300 rounded-lg text-center hover:border-gray-400 transition"
       >
-        <div className="text-sm text-gray-600">
-          📷 {files.length === 0 ? "Tap to upload receipt photos" : "Add more receipts"}
-        </div>
+        <div className="text-sm text-gray-600 flex items-center justify-center gap-2">
+  <Camera size={16} />
+  {files.length === 0 ? "Tap to upload receipt photos" : "Add more receipts"}
+</div>
         <div className="text-xs text-gray-400 mt-1">
           Friends can cross-check the prices
         </div>

@@ -2,6 +2,7 @@
 
 import { useState, useRef } from "react"
 import { Receipt } from "@/types"
+import { Receipt as ReceiptIcon, Camera } from "lucide-react"
 
 type Props = {
   receipts: Receipt[]
@@ -52,9 +53,10 @@ export default function ReceiptManager({
   return (
     <>
       <div className="bg-white border border-gray-200 rounded-xl p-4 space-y-3">
-        <div className="text-xs text-gray-500 font-medium uppercase">
-          📄 Receipts ({receipts.length})
-        </div>
+        <div className="text-xs text-gray-500 font-medium uppercase flex items-center gap-1.5">
+  <ReceiptIcon size={14} />
+  Receipts ({receipts.length})
+</div>
 
         {/* Empty state — dashed upload box */}
         {receipts.length === 0 && canManage && (
@@ -64,10 +66,10 @@ export default function ReceiptManager({
             disabled={uploading}
             className="w-full p-6 border-2 border-dashed border-gray-300 rounded-lg text-center hover:border-gray-400 transition"
           >
-            <div className="text-sm text-gray-600">
-              📷{" "}
-              {uploading ? "Uploading..." : "Tap to upload receipt photos"}
-            </div>
+            <div className="text-sm text-gray-600 flex items-center justify-center gap-2">
+  <Camera size={16} />
+  {uploading ? "Uploading..." : "Tap to upload receipt photos"}
+</div>
             <div className="text-xs text-gray-400 mt-1">
               Friends can cross-check the prices
             </div>
@@ -108,13 +110,14 @@ export default function ReceiptManager({
 
             {canManage && (
               <button
-                type="button"
-                onClick={() => fileInputRef.current?.click()}
-                disabled={uploading}
-                className="w-full p-3 border-2 border-dashed border-gray-300 rounded-lg text-center hover:border-gray-400 transition text-xs text-gray-600"
-              >
-                📷 {uploading ? "Uploading..." : "Add more receipts"}
-              </button>
+  type="button"
+  onClick={() => fileInputRef.current?.click()}
+  disabled={uploading}
+  className="w-full p-3 border-2 border-dashed border-gray-300 rounded-lg text-center hover:border-gray-400 transition text-xs text-gray-600 flex items-center justify-center gap-1.5"
+>
+  <Camera size={14} />
+  {uploading ? "Uploading..." : "Add more receipts"}
+</button>
             )}
           </>
         )}
