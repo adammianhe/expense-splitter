@@ -23,7 +23,13 @@ type Props = {
   onRejectShare: (shareGroupId: string) => Promise<void>
   onRemoveShare: (shareGroupId: string) => Promise<void>
   onSwitchName: () => void
-  onClaimPayment: (amount: number, method: "qr" | "cash", paidItemIds: string[]) => Promise<void>
+  onClaimPayment: (
+    amount: number,
+    method: "qr" | "cash",
+    paidItemIds: string[],
+    paidItemQuantities: Record<string, number>,
+    paidShareGroupIds: string[]
+  ) => Promise<void>
 }
 
 export default function ItemTicker({
@@ -45,15 +51,23 @@ export default function ItemTicker({
   onClaimPayment,
 }: Props) {
   const [showPayment, setShowPayment] = useState(false)
-  const [addingMore, setAddingMore] = useState(false)
   const [shareItem, setShareItem] = useState<Item | null>(null)
 
-  const paidItemIds = new Set(myPayment?.paid_item_ids || [])
-  const hasPaid = paidItemIds.size > 0
+  // Paid quantities per item (e.g. paid for 2 ayam)
+  const paidItemQuantities: Record<string, number> =
+    (myPayment as any)?.paid_item_quantities || {}
+  // Paid share group IDs
+  const paidShareGroupIds = new Set<string>(
+    (myPayment as any)?.paid_share_group_ids || []
+  )
 
   const mySolo = (itemId: string): number => soloQty.get(itemId) || 0
+  const myPaidQty = (itemId: string): number => paidItemQuantities[itemId] || 0
 
-  // Get all share groups for an item
+  // ============================================
+  // SHARE GROUP HELPERS
+  // ============================================
+
   const getItemShareGroups = (itemId: string) => {
     const groupIds = new Set(
       allAssignments
@@ -87,6 +101,7 @@ export default function ItemTicker({
         isMine: !!myMembership,
         isInitiator: initiatorId === participant.id,
         item,
+        isPaid: paidShareGroupIds.has(groupId as string),
       }
     })
   }
@@ -118,10 +133,13 @@ export default function ItemTicker({
     return solo + shareTotal
   }
 
-  // Calculate my share of an item (solo + confirmed shares)
+  // ============================================
+  // PAYMENT CALCULATION (the new model!)
+  // ============================================
+
+  // My CURRENT total bill (everything I owe right now)
   const calculateMyItemShare = (item: Item): number => {
     let total = 0
-
     const solo = mySolo(item.id)
     if (solo > 0) total += solo * Number(item.price)
 
@@ -131,17 +149,38 @@ export default function ItemTicker({
     for (const g of shares) {
       total += (g.quantity * Number(item.price)) / g.members.length
     }
-
     return total
   }
 
-  // Items still NOT paid for, with my contribution > 0
-  const unpaidItems = items.filter((item) => {
-    const myContribution = calculateMyItemShare(item)
-    return myContribution > 0 && !paidItemIds.has(item.id)
-  })
+  // The UNPAID portion of an item (mine - paid)
+  // For solo claims only — shares are atomic (either paid or not)
+  const calculateUnpaidSoloShare = (item: Item): number => {
+    const totalSolo = mySolo(item.id)
+    const paidSolo = myPaidQty(item.id)
+    const unpaidSolo = Math.max(0, totalSolo - paidSolo)
+    return unpaidSolo * Number(item.price)
+  }
 
-  // Items with my pending shares — exclude from payment
+  // Unpaid share contributions
+  const calculateUnpaidShareTotal = (): {
+    total: number
+    paidGroupIds: string[]
+  } => {
+    let total = 0
+    const newlyPaidGroupIds: string[] = []
+    items.forEach((item) => {
+      const shares = getItemShareGroups(item.id).filter(
+        (g) => g.isMine && g.allConfirmed && !g.isPaid
+      )
+      for (const g of shares) {
+        total += (g.quantity * Number(item.price)) / g.members.length
+        newlyPaidGroupIds.push(g.groupId)
+      }
+    })
+    return { total, paidGroupIds: newlyPaidGroupIds }
+  }
+
+  // Items with my pending shares — those can't be paid
   const itemsWithMyPendingShares = new Set(
     items
       .filter((item) =>
@@ -152,14 +191,29 @@ export default function ItemTicker({
       .map((i) => i.id)
   )
 
-  const payableItems = unpaidItems.filter(
-    (item) => !itemsWithMyPendingShares.has(item.id)
-  )
+  // PAYABLE: unpaid solo qty + unpaid confirmed shares
+  // Build the payment delta
+  const unpaidSoloItems: { item: Item; deltaQty: number; deltaAmount: number }[] = []
+  items.forEach((item) => {
+    if (itemsWithMyPendingShares.has(item.id)) return // skip if pending
+    const totalSolo = mySolo(item.id)
+    const paidSolo = myPaidQty(item.id)
+    const deltaQty = totalSolo - paidSolo
+    if (deltaQty > 0) {
+      unpaidSoloItems.push({
+        item,
+        deltaQty,
+        deltaAmount: deltaQty * Number(item.price),
+      })
+    }
+  })
 
-  const mySubtotal = payableItems.reduce(
-    (sum, item) => sum + calculateMyItemShare(item),
-    0
-  )
+  const unpaidShareInfo = calculateUnpaidShareTotal()
+
+  // Subtotal of NEW unpaid stuff
+  const newUnpaidSubtotal =
+    unpaidSoloItems.reduce((sum, x) => sum + x.deltaAmount, 0) +
+    unpaidShareInfo.total
 
   const totalSessionSubtotal = items.reduce((sum, item) => {
     const claimed = getTotalClaimed(item.id)
@@ -167,44 +221,74 @@ export default function ItemTicker({
     return sum + Number(item.price) * effective
   }, 0)
 
-  const bill = calculateBill(mySubtotal, totalSessionSubtotal, session)
-  const finalTotal = roundToTwoDecimals(bill.total)
+  // Bill for the NEW unpaid portion (with proportional tax)
+  const newBill = calculateBill(newUnpaidSubtotal, totalSessionSubtotal, session)
+  const newTotalToPay = roundToTwoDecimals(newBill.total)
 
   const hasTax = session.tax_type && Number(session.tax_value) > 0
   const hasService = session.service_type && Number(session.service_value) > 0
 
+  // Payment status display
   const paymentStatus = myPayment?.status
   const isPaymentClaimed = paymentStatus === "claimed"
   const isVerified = paymentStatus === "verified"
   const isUnverified = paymentStatus === "unverified"
+  const hasPaid = (myPayment?.amount_paid || 0) > 0
 
   const getPaymentBadge = () => {
     if (!myPayment || !hasPaid) return null
     if (isVerified)
       return {
-        text: `✅ Verified by owner — RM ${Number(myPayment.amount_paid).toFixed(2)} paid`,
+        text: `✅ Verified — RM ${Number(myPayment.amount_paid).toFixed(2)} paid`,
         color: "bg-green-100 text-green-800",
       }
     if (isPaymentClaimed)
       return {
-        text: `⏳ Waiting verification — RM ${Number(myPayment.amount_paid).toFixed(2)} claimed`,
+        text: `⏳ Waiting verification — RM ${Number(myPayment.amount_paid).toFixed(2)}`,
         color: "bg-yellow-100 text-yellow-800",
       }
     if (isUnverified)
       return {
-        text: "❌ Payment unverified by owner — please pay again",
+        text: "❌ Payment unverified — please pay again",
         color: "bg-red-100 text-red-800",
       }
     return null
   }
 
   const badge = getPaymentBadge()
-  const itemsLocked = hasPaid && !addingMore && !isUnverified
+
+  // ============================================
+  // PAYMENT HANDLER
+  // ============================================
 
   const handleClaimPayment = async (method: "qr" | "cash") => {
-    const itemIdsToPay = payableItems.map((i) => i.id)
-    await onClaimPayment(finalTotal, method, itemIdsToPay)
-    setAddingMore(false)
+    // Build the new quantities map: paid + new deltas
+    const newQuantities: Record<string, number> = { ...paidItemQuantities }
+    const newItemIds: string[] = [...((myPayment as any)?.paid_item_ids || [])]
+
+    unpaidSoloItems.forEach(({ item, deltaQty }) => {
+      newQuantities[item.id] = (newQuantities[item.id] || 0) + deltaQty
+      if (!newItemIds.includes(item.id)) newItemIds.push(item.id)
+    })
+
+    // For shares, also add the items to paid_item_ids
+    unpaidShareInfo.paidGroupIds.forEach((groupId) => {
+      const member = allAssignments.find(
+        (a) =>
+          a.share_group_id === groupId && a.participant_id === participant.id
+      )
+      if (member && !newItemIds.includes(member.item_id)) {
+        newItemIds.push(member.item_id)
+      }
+    })
+
+    await onClaimPayment(
+      newTotalToPay,
+      method,
+      newItemIds,
+      newQuantities,
+      unpaidShareInfo.paidGroupIds
+    )
   }
 
   const handleCreateShare = async (quantity: number, taggedIds: string[]) => {
@@ -235,20 +319,22 @@ export default function ItemTicker({
         {/* Items */}
         <div>
           <h2 className="text-sm font-medium text-gray-700 mb-2">
-            {itemsLocked ? "Items you paid for" : "How many did you have?"}
+            How many did you have?
           </h2>
           <div className="space-y-2">
             {items.map((item) => {
               const mine = mySolo(item.id)
-              const isPaidItem = paidItemIds.has(item.id)
+              const paid = myPaidQty(item.id)
               const totalClaimed = getTotalClaimed(item.id)
               const remaining = item.quantity - totalClaimed
               const myShare = calculateMyItemShare(item)
-              // Locked by others only if I haven't already claimed it (unconfirmed)
-const lockedByOthers =
-  lockedItemIds.has(item.id) && !isPaidItem && mine === 0
+              const lockedByOthers =
+                lockedItemIds.has(item.id) && mine === 0
+              const isFullyClaimed = totalClaimed >= item.quantity
 
-              const isDisabled = isPaidItem || itemsLocked || lockedByOthers
+              // Button logic
+              const canDecrement = mine > paid && !lockedByOthers
+              const canIncrement = !lockedByOthers && !isFullyClaimed
               const isTicked = mine > 0 || myShare > 0
 
               const shareGroups = getItemShareGroups(item.id)
@@ -273,7 +359,7 @@ const lockedByOthers =
                     isTicked
                       ? "bg-black text-white border-black"
                       : "bg-white border-gray-200"
-                  } ${isDisabled ? "opacity-60" : ""}`}
+                  }`}
                 >
                   {/* Item header */}
                   <div className="flex items-center justify-between gap-3">
@@ -291,41 +377,33 @@ const lockedByOthers =
                       </div>
                     </div>
 
-                    {/* Solo quantity controls */}
+                    {/* Quantity controls */}
                     <div className="flex items-center gap-2 flex-shrink-0">
-                      {(() => {
-  const isFullyClaimed = totalClaimed >= item.quantity
-  const canDecrement = mine > 0 && !isPaidItem && !itemsLocked
-  const canIncrement = !isDisabled && !isFullyClaimed
-
-  return (
-    <>
-      <button
-        onClick={() => onDecrement(item.id)}
-        disabled={!canDecrement}
-        className={`w-8 h-8 rounded-full font-bold text-lg flex items-center justify-center transition ${
-          isTicked
-            ? "bg-white/20 text-white disabled:opacity-30"
-            : "bg-gray-100 text-gray-700 disabled:opacity-30"
-        }`}
-      >
-        −
-      </button>
-      <span className="font-bold text-lg w-6 text-center">{mine}</span>
-      <button
-        onClick={() => onIncrement(item.id)}
-        disabled={!canIncrement}
-        className={`w-8 h-8 rounded-full font-bold text-lg flex items-center justify-center transition ${
-          isTicked
-            ? "bg-white/20 text-white disabled:opacity-30"
-            : "bg-gray-100 text-gray-700 disabled:opacity-30"
-        }`}
-      >
-        +
-      </button>
-    </>
-  )
-})()}
+                      <button
+                        onClick={() => onDecrement(item.id)}
+                        disabled={!canDecrement}
+                        className={`w-8 h-8 rounded-full font-bold text-lg flex items-center justify-center transition ${
+                          isTicked
+                            ? "bg-white/20 text-white disabled:opacity-30"
+                            : "bg-gray-100 text-gray-700 disabled:opacity-30"
+                        }`}
+                      >
+                        −
+                      </button>
+                      <span className="font-bold text-lg w-6 text-center">
+                        {mine}
+                      </span>
+                      <button
+                        onClick={() => onIncrement(item.id)}
+                        disabled={!canIncrement}
+                        className={`w-8 h-8 rounded-full font-bold text-lg flex items-center justify-center transition ${
+                          isTicked
+                            ? "bg-white/20 text-white disabled:opacity-30"
+                            : "bg-gray-100 text-gray-700 disabled:opacity-30"
+                        }`}
+                      >
+                        +
+                      </button>
                     </div>
                   </div>
 
@@ -356,12 +434,21 @@ const lockedByOthers =
                     )}
                   </div>
 
+                  {/* Paid badge (for solo) */}
+                  {paid > 0 && (
+                    <div className={`text-xs mt-1 font-medium ${isTicked ? "text-green-300" : "text-green-600"}`}>
+                      ✓ Paid for {paid} of {mine}
+                    </div>
+                  )}
+
                   {/* Shares display */}
                   {shareGroups.length > 0 && (
                     <div className={`mt-3 pt-3 border-t space-y-2 ${isTicked ? "border-white/20" : "border-gray-200"}`}>
                       {shareGroups.map((g) => {
                         const memberNames = g.members.map((m) => m.name).join(", ")
-                        const status = g.allConfirmed
+                        const status = g.isPaid
+                          ? "✓ Paid"
+                          : g.allConfirmed
                           ? "✓ Confirmed"
                           : g.members.some((m) => m.status === "rejected")
                           ? "❌ Rejected"
@@ -376,12 +463,12 @@ const lockedByOthers =
                           >
                             <div className={`flex items-center justify-between gap-2 ${isTicked ? "text-gray-200" : "text-gray-700"}`}>
                               <span>
-                                Share: {g.quantity} × split with {memberNames}
+                                Share: {g.quantity} × with {memberNames}
                               </span>
                               <span className="font-medium">{status}</span>
                             </div>
 
-                            {/* If I'm tagged but haven't responded */}
+                            {/* If I'm tagged and pending */}
                             {g.isMine && g.myStatus === "pending" && !g.isInitiator && (
                               <div className="flex gap-2 mt-2">
                                 <button
@@ -399,8 +486,8 @@ const lockedByOthers =
                               </div>
                             )}
 
-                            {/* If I initiated this share */}
-                            {g.isInitiator && !g.allConfirmed && !isDisabled && (
+                            {/* If I initiated this share and not yet paid */}
+                            {g.isInitiator && !g.allConfirmed && !g.isPaid && (
                               <button
                                 onClick={() => {
                                   if (confirm("Remove this share?")) onRemoveShare(g.groupId)
@@ -416,8 +503,8 @@ const lockedByOthers =
                     </div>
                   )}
 
-                  {/* Add share button — hidden by default (Option B) */}
-                  {!isDisabled && !isPaidItem && (
+                  {/* Add share button — only if I can still interact */}
+                  {!lockedByOthers && (
                     <button
                       onClick={() => setShareItem(item)}
                       className={`mt-2 text-xs font-medium ${isTicked ? "text-blue-300" : "text-blue-600"} hover:underline`}
@@ -426,54 +513,26 @@ const lockedByOthers =
                     </button>
                   )}
 
-                  {isPaidItem && (
-                    <div className={`text-xs mt-1 font-medium ${isTicked ? "text-green-300" : "text-green-600"}`}>
-                      ✓ Already paid
-                    </div>
-                  )}
-
                   {lockedByOthers && (
                     <div className="text-xs mt-1 text-gray-400 font-medium">
-                      🔒 Paid by someone else
+                      🔒 Fully claimed by others
                     </div>
                   )}
                 </div>
               )
             })}
           </div>
-
-          {hasPaid && !addingMore && (
-            <Button
-              variant="ghost"
-              onClick={() => setAddingMore(true)}
-              className="mt-3 w-full text-sm"
-            >
-              + Add more items
-            </Button>
-          )}
-
-          {addingMore && (
-            <div className="mt-3 bg-blue-50 border border-blue-200 rounded-xl p-3 text-sm text-blue-800">
-              💡 Add more items below. Items you've paid for can't be changed.
-              <button
-                onClick={() => setAddingMore(false)}
-                className="block mt-1 text-xs underline text-blue-600"
-              >
-                Cancel
-              </button>
-            </div>
-          )}
         </div>
 
         {/* Pending shares warning */}
         {itemsWithMyPendingShares.size > 0 && (
           <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-3 text-sm text-yellow-800">
-            ⏳ Some shares are waiting for confirmation. You can pay other items now and pay those after all confirm.
+            ⏳ Some shares are waiting for confirmation. Payment for those will be available once all confirm.
           </div>
         )}
 
-        {/* Bill Breakdown */}
-        {mySubtotal > 0 && (
+        {/* New unpaid bill */}
+        {newUnpaidSubtotal > 0 && (
           <div className="bg-white border border-gray-200 rounded-xl p-4 space-y-3">
             <div className="text-xs text-gray-500 font-medium">
               {hasPaid ? "New items to pay" : "Your bill"}
@@ -482,7 +541,7 @@ const lockedByOthers =
             <div className="flex justify-between text-sm">
               <span className="text-gray-600">Subtotal</span>
               <span className="font-medium text-gray-900">
-                RM {bill.subtotal.toFixed(2)}
+                RM {newBill.subtotal.toFixed(2)}
               </span>
             </div>
 
@@ -494,7 +553,7 @@ const lockedByOthers =
                     <span className="text-xs text-gray-400">({session.tax_value}%)</span>
                   )}
                 </span>
-                <span className="font-medium text-gray-900">RM {bill.tax.toFixed(2)}</span>
+                <span className="font-medium text-gray-900">RM {newBill.tax.toFixed(2)}</span>
               </div>
             )}
 
@@ -506,22 +565,21 @@ const lockedByOthers =
                     <span className="text-xs text-gray-400">({session.service_value}%)</span>
                   )}
                 </span>
-                <span className="font-medium text-gray-900">RM {bill.service.toFixed(2)}</span>
+                <span className="font-medium text-gray-900">RM {newBill.service.toFixed(2)}</span>
               </div>
             )}
 
             <div className="border-t border-gray-200 pt-3 flex justify-between items-center">
-              <span className="font-semibold text-gray-900">Total</span>
+              <span className="font-semibold text-gray-900">Total to pay</span>
               <span className="text-2xl font-bold text-gray-900">
-                RM {finalTotal.toFixed(2)}
+                RM {newTotalToPay.toFixed(2)}
               </span>
             </div>
-
-            <p className="text-xs text-gray-500">Confirmed shares included</p>
           </div>
         )}
 
-        {hasPaid && mySubtotal === 0 && !addingMore && (
+        {/* All settled */}
+        {hasPaid && newUnpaidSubtotal === 0 && (
           <div className="bg-green-50 border border-green-200 rounded-xl p-4 text-center">
             <div className="text-green-800 font-medium">🎉 You're all settled!</div>
             <div className="text-green-600 text-sm mt-1">
@@ -531,7 +589,7 @@ const lockedByOthers =
         )}
       </div>
 
-      {finalTotal > 0 && (
+      {newTotalToPay > 0 && (
         <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 p-4">
           <div className="max-w-md mx-auto">
             <Button
@@ -540,7 +598,7 @@ const lockedByOthers =
               className="w-full py-4 text-base"
             >
               {hasPaid ? "Pay More" : isUnverified ? "Pay Again" : "Pay"} — RM{" "}
-              {finalTotal.toFixed(2)}
+              {newTotalToPay.toFixed(2)}
             </Button>
           </div>
         </div>
@@ -549,7 +607,7 @@ const lockedByOthers =
       {showPayment && (
         <PaymentModal
           session={session}
-          amount={finalTotal}
+          amount={newTotalToPay}
           onConfirm={handleClaimPayment}
           onClose={() => setShowPayment(false)}
         />

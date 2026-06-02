@@ -192,8 +192,12 @@ if (data) {
   }}
   onVerify={verifyPayment}
   onUnverify={unverifyPayment}
-  onMarkAsCash={markAsCash}
-  onOwnerConfirm={ownerConfirmPayment}
+  onMarkAsCash={(participantId, amount, paidItemIds, paidItemQuantities, paidShareGroupIds) =>
+  markAsCash(participantId, amount, paidItemIds, paidItemQuantities, paidShareGroupIds)
+}
+onOwnerConfirm={(participantId, amount, paidItemIds, paidItemQuantities, paidShareGroupIds) =>
+  ownerConfirmPayment(participantId, amount, paidItemIds, paidItemQuantities, paidShareGroupIds)
+}
 />
       ) : (
         <ItemTicker
@@ -215,9 +219,16 @@ if (data) {
     clearParticipantId(sessionId)
     setParticipantId(null)
   }}
-  onClaimPayment={(amount, method, paidItemIds) =>
-    claimPayment(currentParticipant.id, amount, method, paidItemIds)
-  }
+  onClaimPayment={(amount, method, paidItemIds, paidItemQuantities, paidShareGroupIds) =>
+  claimPayment(
+    currentParticipant.id,
+    amount,
+    method,
+    paidItemIds,
+    paidItemQuantities,
+    paidShareGroupIds
+  )
+}
 />
       )}
     </>

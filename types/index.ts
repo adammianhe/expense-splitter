@@ -85,7 +85,9 @@ export type Payment = {
   amount_paid: number
   status: 'unpaid' | 'claimed' | 'verified' | 'unverified'
   method: 'qr' | 'cash' | null
-  paid_item_ids: string[]  // ← NEW
+  paid_item_ids: string[]
+  paid_item_quantities: Record<string, number>
+  paid_share_group_ids: string[]
   created_at: string
   updated_at: string
 }

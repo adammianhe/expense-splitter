@@ -17,7 +17,10 @@ export type ParticipantBill = {
   hasTicked: boolean
   amountPaid: number
   amountOwed: number
-  hasPendingShares: boolean // true if any share involving this person is pending
+  hasPendingShares: boolean
+  // NEW: paid quantities per item, and paid share group IDs
+  paidItemQuantities: Record<string, number>
+  paidShareGroupIds: Set<string>
 }
 
 export function useSessionBills(
@@ -50,7 +53,7 @@ export function useSessionBills(
         total += Number(soloAssignment.quantity) * itemPrice
       }
 
-      // Share claims — only confirmed shares count toward bill
+      // Share claims — only confirmed shares count
       const myShares = allAssignments.filter(
         (a) =>
           a.item_id === itemId &&
@@ -59,11 +62,9 @@ export function useSessionBills(
       )
 
       for (const myShare of myShares) {
-        // Get all members of this share group (any status)
         const groupMembers = allAssignments.filter(
           (a) => a.share_group_id === myShare.share_group_id
         )
-        // Only fully-confirmed groups contribute to bill
         const allConfirmed = groupMembers.every((m) => m.status === "confirmed")
         if (allConfirmed) {
           const shareQty = Number(myShare.quantity)
@@ -75,9 +76,7 @@ export function useSessionBills(
       return total
     }
 
-    // Check if participant has any pending shares
     const hasPendingShares = (participantId: string): boolean => {
-      // Participant is part of a share where someone else still hasn't confirmed
       const myShareGroupIds = new Set(
         allAssignments
           .filter(
@@ -96,9 +95,8 @@ export function useSessionBills(
       return false
     }
 
-    // Total session subtotal — sum all confirmed claims (capped at item quantity)
+    // Total session subtotal — solo + fully-confirmed shares (capped at qty)
     const totalSessionSubtotal = items.reduce((sum, item) => {
-      // Sum solo confirmed quantities
       const soloTotal = allAssignments
         .filter(
           (a) =>
@@ -108,7 +106,6 @@ export function useSessionBills(
         )
         .reduce((s, a) => s + Number(a.quantity), 0)
 
-      // Sum share quantities (only fully-confirmed groups)
       const shareGroupIds = new Set(
         allAssignments
           .filter((a) => a.item_id === item.id && a.share_group_id !== null)
@@ -119,10 +116,7 @@ export function useSessionBills(
       for (const groupId of shareGroupIds) {
         const members = allAssignments.filter((a) => a.share_group_id === groupId)
         const allConfirmed = members.every((m) => m.status === "confirmed")
-        if (allConfirmed) {
-          // Each share group represents `quantity` units of the item
-          shareTotal += Number(members[0].quantity)
-        }
+        if (allConfirmed) shareTotal += Number(members[0].quantity)
       }
 
       const totalClaimed = soloTotal + shareTotal
@@ -148,6 +142,13 @@ export function useSessionBills(
       const amountOwed = Math.max(0, total - amountPaid)
       const hasTicked = subtotal > 0 || hasPendingShares(p.id)
 
+      // Extract paid item quantities and share group IDs
+      const paidItemQuantities: Record<string, number> =
+        (payment as any)?.paid_item_quantities || {}
+      const paidShareGroupIds: Set<string> = new Set(
+        (payment as any)?.paid_share_group_ids || []
+      )
+
       return {
         participant: p,
         subtotal: billCalc.subtotal,
@@ -162,10 +163,12 @@ export function useSessionBills(
         amountPaid,
         amountOwed,
         hasPendingShares: hasPendingShares(p.id),
+        paidItemQuantities,
+        paidShareGroupIds,
       }
     })
 
-    // Total restaurant bill (fixed) — items + tax + service
+    // Total restaurant bill (fixed)
     const itemsSubtotal = items.reduce(
       (sum, item) => sum + Number(item.price) * Number(item.quantity),
       0
@@ -217,4 +220,4 @@ function defaultSummary() {
     totalPending: 0,
     totalOutstanding: 0,
   }
-}1 
+}
