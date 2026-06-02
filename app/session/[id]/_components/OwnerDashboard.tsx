@@ -535,6 +535,40 @@ export default function OwnerDashboard({
         <Button variant="secondary" onClick={handleShare} className="w-full text-sm">
           {copied ? "✓ Link copied!" : "📋 Share Link to Friends"}
         </Button>
+
+        {/* COLLECTION SUMMARY */}
+        <div className="bg-white border border-gray-200 rounded-xl p-4 space-y-3">
+          <div className="text-xs text-gray-500 font-medium uppercase">
+            Collection Summary
+          </div>
+          <div className="space-y-2">
+            <div className="flex justify-between text-sm">
+              <span className="text-gray-600">Total bill</span>
+              <span className="font-medium text-gray-900">
+                RM {summary.totalBill.toFixed(2)}
+              </span>
+            </div>
+            <div className="flex justify-between text-sm">
+              <span className="text-green-700">✅ Collected</span>
+              <span className="font-medium text-green-700">
+                RM {summary.totalCollected.toFixed(2)}
+              </span>
+            </div>
+            <div className="flex justify-between text-sm">
+              <span className="text-yellow-700">⏳ Pending verification</span>
+              <span className="font-medium text-yellow-700">
+                RM {summary.totalPending.toFixed(2)}
+              </span>
+            </div>
+            <div className="flex justify-between text-sm border-t border-gray-100 pt-2">
+              <span className="text-red-700">❌ Outstanding</span>
+              <span className="font-bold text-red-700">
+                RM {summary.totalOutstanding.toFixed(2)}
+              </span>
+            </div>
+          </div>
+        </div>
+        
         <ReceiptManager
   receipts={receipts}
   canManage={true}
@@ -821,38 +855,7 @@ export default function OwnerDashboard({
           onDeleteItem={onDeleteItem}
         />
 
-        {/* COLLECTION SUMMARY */}
-        <div className="bg-white border border-gray-200 rounded-xl p-4 space-y-3">
-          <div className="text-xs text-gray-500 font-medium uppercase">
-            Collection Summary
-          </div>
-          <div className="space-y-2">
-            <div className="flex justify-between text-sm">
-              <span className="text-gray-600">Total bill</span>
-              <span className="font-medium text-gray-900">
-                RM {summary.totalBill.toFixed(2)}
-              </span>
-            </div>
-            <div className="flex justify-between text-sm">
-              <span className="text-green-700">✅ Collected</span>
-              <span className="font-medium text-green-700">
-                RM {summary.totalCollected.toFixed(2)}
-              </span>
-            </div>
-            <div className="flex justify-between text-sm">
-              <span className="text-yellow-700">⏳ Pending verification</span>
-              <span className="font-medium text-yellow-700">
-                RM {summary.totalPending.toFixed(2)}
-              </span>
-            </div>
-            <div className="flex justify-between text-sm border-t border-gray-100 pt-2">
-              <span className="text-red-700">❌ Outstanding</span>
-              <span className="font-bold text-red-700">
-                RM {summary.totalOutstanding.toFixed(2)}
-              </span>
-            </div>
-          </div>
-        </div>
+        
 
         {/* PARTICIPANTS */}
         <div>

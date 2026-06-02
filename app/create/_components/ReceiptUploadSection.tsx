@@ -1,7 +1,6 @@
 "use client"
 
 import { useRef } from "react"
-import Button from "@/components/ui/Button"
 
 type Props = {
   files: File[]
@@ -25,7 +24,8 @@ export default function ReceiptUploadSection({ files, onChange }: Props) {
   return (
     <div>
       <label className="block text-sm font-medium text-gray-700 mb-2">
-        Receipt Photos <span className="text-gray-400 font-normal">(optional)</span>
+        Receipt Photos{" "}
+        <span className="text-gray-400 font-normal text-xs">(optional)</span>
       </label>
 
       {files.length > 0 && (
@@ -56,26 +56,27 @@ export default function ReceiptUploadSection({ files, onChange }: Props) {
         </div>
       )}
 
-      <Button
-        variant="secondary"
+      <button
+        type="button"
         onClick={() => inputRef.current?.click()}
-        className="w-full text-sm"
+        className="w-full p-6 border-2 border-dashed border-gray-300 rounded-lg text-center hover:border-gray-400 transition"
       >
-        {files.length === 0 ? "📷 Add Receipt Photos" : "+ Add More"}
-      </Button>
-
-      <p className="text-xs text-gray-500 mt-1">
-        Friends can cross-check the prices against the receipt
-      </p>
+        <div className="text-sm text-gray-600">
+          📷 {files.length === 0 ? "Tap to upload receipt photos" : "Add more receipts"}
+        </div>
+        <div className="text-xs text-gray-400 mt-1">
+          Friends can cross-check the prices
+        </div>
+      </button>
 
       <input
-  ref={inputRef}
-  type="file"
-  accept="image/*"
-  multiple
-  onChange={handleAdd}
-  className="hidden"
-/>
+        ref={inputRef}
+        type="file"
+        accept="image/*"
+        multiple
+        onChange={handleAdd}
+        className="hidden"
+      />
     </div>
   )
 }

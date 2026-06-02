@@ -2,7 +2,6 @@
 
 import { useState, useRef } from "react"
 import { Receipt } from "@/types"
-import Button from "@/components/ui/Button"
 
 type Props = {
   receipts: Receipt[]
@@ -53,76 +52,80 @@ export default function ReceiptManager({
   return (
     <>
       <div className="bg-white border border-gray-200 rounded-xl p-4 space-y-3">
-        <div className="flex items-center justify-between">
-          <div className="text-xs text-gray-500 font-medium uppercase">
-            📄 Receipts ({receipts.length})
-          </div>
-          {canManage && (
-            <Button
-              variant="ghost"
-              onClick={() => fileInputRef.current?.click()}
-              disabled={uploading}
-              className="text-xs px-2"
-            >
-              {uploading ? "Uploading..." : "+ Add"}
-            </Button>
-          )}
+        <div className="text-xs text-gray-500 font-medium uppercase">
+          📄 Receipts ({receipts.length})
         </div>
 
+        {/* Empty state — dashed upload box */}
         {receipts.length === 0 && canManage && (
           <button
+            type="button"
             onClick={() => fileInputRef.current?.click()}
             disabled={uploading}
             className="w-full p-6 border-2 border-dashed border-gray-300 rounded-lg text-center hover:border-gray-400 transition"
           >
-            <div className="text-2xl mb-1">📷</div>
             <div className="text-sm text-gray-600">
-              {uploading ? "Uploading..." : "Tap to add receipt photo"}
+              📷{" "}
+              {uploading ? "Uploading..." : "Tap to upload receipt photos"}
             </div>
             <div className="text-xs text-gray-400 mt-1">
-              Optional — for friends to cross-check prices
+              Friends can cross-check the prices
             </div>
           </button>
         )}
 
+        {/* Receipts grid + add more button */}
         {receipts.length > 0 && (
-          <div className="grid grid-cols-3 gap-2">
-            {receipts.map((receipt) => (
-              <div
-                key={receipt.id}
-                className="relative aspect-square rounded-lg overflow-hidden bg-gray-100 group"
-              >
-                <button
-                  onClick={() => setLightboxUrl(receipt.image_url)}
-                  className="w-full h-full"
+          <>
+            <div className="grid grid-cols-3 gap-2">
+              {receipts.map((receipt) => (
+                <div
+                  key={receipt.id}
+                  className="relative aspect-square rounded-lg overflow-hidden bg-gray-100 group"
                 >
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={receipt.image_url}
-                    alt="Receipt"
-                    className="w-full h-full object-cover"
-                  />
-                </button>
-                {canManage && (
                   <button
-                    onClick={() => handleDelete(receipt)}
-                    className="absolute top-1 right-1 w-6 h-6 bg-red-500 text-white rounded-full flex items-center justify-center text-xs shadow-md hover:bg-red-600"
+                    onClick={() => setLightboxUrl(receipt.image_url)}
+                    className="w-full h-full"
                   >
-                    ✕
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={receipt.image_url}
+                      alt="Receipt"
+                      className="w-full h-full object-cover"
+                    />
                   </button>
-                )}
-              </div>
-            ))}
-          </div>
+                  {canManage && (
+                    <button
+                      onClick={() => handleDelete(receipt)}
+                      className="absolute top-1 right-1 w-6 h-6 bg-red-500 text-white rounded-full flex items-center justify-center text-xs shadow-md hover:bg-red-600"
+                    >
+                      ✕
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+
+            {canManage && (
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={uploading}
+                className="w-full p-3 border-2 border-dashed border-gray-300 rounded-lg text-center hover:border-gray-400 transition text-xs text-gray-600"
+              >
+                📷 {uploading ? "Uploading..." : "Add more receipts"}
+              </button>
+            )}
+          </>
         )}
 
         <input
-  ref={fileInputRef}
-  type="file"
-  accept="image/*"
-  onChange={handleFileSelect}
-  className="hidden"
-/>
+          ref={fileInputRef}
+          type="file"
+          accept="image/*"
+          onChange={handleFileSelect}
+          className="hidden"
+        />
       </div>
 
       {/* Lightbox */}
