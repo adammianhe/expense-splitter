@@ -7,6 +7,7 @@ import ParticipantsSection from "./_components/ParticipantsSection"
 import TaxSection from "./_components/TaxSection"
 import QRUploadSection from "./_components/QRUploadSection"
 import Button from "@/components/ui/Button"
+import ReceiptUploadSection from "./_components/ReceiptUploadSection"
 
 export default function CreateSessionPage() {
   const {
@@ -16,6 +17,7 @@ export default function CreateSessionPage() {
     setItems,
     participants,
     setParticipants,
+    receiptFiles, setReceiptFiles,
     tax,
     setTax,
     service,
@@ -42,6 +44,11 @@ export default function CreateSessionPage() {
         <TaxSection label="Service Charge" config={service} onChange={setService} />
 
         <QRUploadSection file={qrFile} onChange={setQrFile} />
+
+        <ReceiptUploadSection
+  files={receiptFiles}
+  onChange={setReceiptFiles}
+/>
 
         <Button
           variant="primary"

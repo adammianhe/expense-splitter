@@ -18,6 +18,7 @@ export function useCreateSession() {
   const [items, setItems] = useState<ItemForm[]>([
   { name: "", price: "", quantity: "1", priceMode: "each" }
 ])
+const [receiptFiles, setReceiptFiles] = useState<File[]>([])
   const [participants, setParticipants] = useState<ParticipantForm[]>([{ name: "" }])
   const [qrFile, setQrFile] = useState<File | null>(null)
 
@@ -111,19 +112,19 @@ const participantRows = participants.map((p, index) => ({
   is_owner: index === 0,
 }))
 
-const { data: createdParticipants, error: participantsError } = await supabase
+const { data: insertedParticipants, error: participantsError } = await supabase
   .from("participants")
   .insert(participantRows)
   .select()
 
 if (participantsError) throw participantsError
 
+// Find the owner participant (first one inserted)
+const ownerParticipant = insertedParticipants?.find((p: any) => p.is_owner)
+
 // Save owner's participant ID to localStorage so they skip name picker
-const owner = createdParticipants?.find((p) => p.is_owner)
-if (owner) {
-  if (typeof window !== "undefined") {
-    localStorage.setItem(`session_${session.id}_participant`, owner.id)
-  }
+if (ownerParticipant && typeof window !== "undefined") {
+  localStorage.setItem(`session_${session.id}_participant`, ownerParticipant.id)
 }
 
       // 4. Create items — convert to per-item price if mode is "total"
@@ -131,6 +132,8 @@ const itemRows = items.map((item) => {
   const qty = parseInt(item.quantity) || 1
   const inputPrice = parseFloat(item.price)
   const pricePerItem = item.priceMode === "total" ? inputPrice / qty : inputPrice
+
+
 
   return {
     session_id: session.id,
@@ -142,6 +145,35 @@ const itemRows = items.map((item) => {
 
       const { error: itemsError } = await supabase.from("items").insert(itemRows)
 
+      // 5. Upload receipts (if any)
+if (receiptFiles.length > 0) {
+  for (const file of receiptFiles) {
+    try {
+      const ext = file.name.split(".").pop() || "jpg"
+      const fileName = `receipts/${session.id}/${Date.now()}_${Math.random().toString(36).slice(2, 8)}.${ext}`
+
+      const { error: uploadError } = await supabase.storage
+        .from("session-uploads")
+        .upload(fileName, file, { cacheControl: "3600", upsert: false })
+
+      if (!uploadError) {
+        const { data: urlData } = supabase.storage
+          .from("session-uploads")
+          .getPublicUrl(fileName)
+
+        await supabase.from("receipts").insert({
+          session_id: session.id,
+          image_url: urlData.publicUrl,
+          uploaded_by_participant_id: ownerParticipant.id,
+        })
+      }
+    } catch (e) {
+      // Best effort — don't fail session creation
+      console.error("Receipt upload error:", e)
+    }
+  }
+}
+
       if (itemsError) throw itemsError
 
       // 5. Redirect
@@ -151,6 +183,8 @@ const itemRows = items.map((item) => {
       setLoading(false)
     }
   }
+
+  
 
   return {
     sessionName,
@@ -167,5 +201,7 @@ const itemRows = items.map((item) => {
     setQrFile,
     loading,
     createSession,
+    receiptFiles,
+  setReceiptFiles,
   }
 }

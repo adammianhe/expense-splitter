@@ -92,6 +92,14 @@ export type Payment = {
   updated_at: string
 }
 
+export type Receipt = {
+  id: string
+  session_id: string
+  image_url: string
+  uploaded_by_participant_id: string | null
+  created_at: string
+}
+
 // Loaded session data (with items and participants)
 export type LoadedSession = {
   session: Session

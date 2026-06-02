@@ -13,10 +13,13 @@ import NamePicker from "./_components/NamePicker"
 import ItemTicker from "./_components/ItemTicker"
 import OwnerDashboard from "./_components/OwnerDashboard"
 import ToastContainer from "@/components/ui/ToastContainer"
+import { useReceipts } from "@/hooks/useReceipts"
+import ReceiptManager from "./_components/ReceiptManager"
 
 export default function SessionPage({ params }: { params: Promise<{ id: string }> }) {
   const { id: sessionId } = use(params)
   const { data, loading, error, reload } = useSession(sessionId)
+  const { receipts, uploadReceipt, deleteReceipt } = useReceipts(sessionId)
   const [participantId, setParticipantId] = useState<string | null>(null)
   const [checkedStorage, setCheckedStorage] = useState(false)
 
@@ -158,79 +161,99 @@ if (data) {
       <ToastContainer toasts={toasts} onDismiss={dismissToast} />
 
       {!currentParticipant ? (
-        <NamePicker
-          sessionId={sessionId}
-          participants={data.participants}
-          onPicked={setParticipantId}
-        />
-      ) : currentParticipant.is_owner ? (
-        <OwnerDashboard
-  session={data.session}
-  participant={currentParticipant}
-  bills={bills}
-  items={data.items}
-  soloQty={soloQty}
-  allAssignments={allAssignments}
-  summary={summary}
-  lockedItemIds={lockedItemIds}
-  isItemLocked={editor.isItemLocked}
-  canDeleteParticipant={editor.canDeleteParticipant}
-  onAddItem={editor.addItem}
-  onUpdateItem={editor.updateItem}
-  onDeleteItem={editor.deleteItem}
-  onAddParticipant={editor.addParticipant}
-  onDeleteParticipant={editor.deleteParticipant}
-  onIncrementItem={incrementSolo}
-  onDecrementItem={decrementSolo}
-  onCreateShare={createShare}
-  onConfirmShare={confirmShare}
-  onRejectShare={rejectShare}
-  onRemoveShare={removeShare}
-  onSwitchName={() => {
-    clearParticipantId(sessionId)
-    setParticipantId(null)
-  }}
-  onVerify={verifyPayment}
-  onUnverify={unverifyPayment}
-  onMarkAsCash={(participantId, amount, paidItemIds, paidItemQuantities, paidShareGroupIds) =>
-  markAsCash(participantId, amount, paidItemIds, paidItemQuantities, paidShareGroupIds)
-}
-onOwnerConfirm={(participantId, amount, paidItemIds, paidItemQuantities, paidShareGroupIds) =>
-  ownerConfirmPayment(participantId, amount, paidItemIds, paidItemQuantities, paidShareGroupIds)
-}
-/>
-      ) : (
-        <ItemTicker
-  session={data.session}
-  participant={currentParticipant}
-  participants={data.participants}
-  items={data.items}
-  soloQty={soloQty}
-  allAssignments={allAssignments}
-  myPayment={getPayment(currentParticipant.id)}
-  lockedItemIds={lockedItemIds}
-  onIncrement={incrementSolo}
-  onDecrement={decrementSolo}
-  onCreateShare={createShare}
-  onConfirmShare={confirmShare}
-  onRejectShare={rejectShare}
-  onRemoveShare={removeShare}
-  onSwitchName={() => {
-    clearParticipantId(sessionId)
-    setParticipantId(null)
-  }}
-  onClaimPayment={(amount, method, paidItemIds, paidItemQuantities, paidShareGroupIds) =>
-  claimPayment(
-    currentParticipant.id,
-    amount,
-    method,
-    paidItemIds,
-    paidItemQuantities,
-    paidShareGroupIds
-  )
-}
-/>
-      )}
+  <NamePicker
+    sessionId={sessionId}
+    participants={data.participants}
+    onPicked={setParticipantId}
+  />
+) : currentParticipant.is_owner ? (
+  <>
+    <div className="max-w-md mx-auto px-6 pt-6">
+      <ReceiptManager
+        receipts={receipts}
+        canManage={true}
+        onUpload={(file: File) => uploadReceipt(file, currentParticipant.id).then(() => {})}
+        onDelete={deleteReceipt}
+      />
+    </div>
+    <OwnerDashboard
+      session={data.session}
+      participant={currentParticipant}
+      bills={bills}
+      items={data.items}
+      soloQty={soloQty}
+      allAssignments={allAssignments}
+      summary={summary}
+      lockedItemIds={lockedItemIds}
+      isItemLocked={editor.isItemLocked}
+      canDeleteParticipant={editor.canDeleteParticipant}
+      onAddItem={editor.addItem}
+      onUpdateItem={editor.updateItem}
+      onDeleteItem={editor.deleteItem}
+      onAddParticipant={editor.addParticipant}
+      onDeleteParticipant={editor.deleteParticipant}
+      onIncrementItem={incrementSolo}
+      onDecrementItem={decrementSolo}
+      onCreateShare={createShare}
+      onConfirmShare={confirmShare}
+      onRejectShare={rejectShare}
+      onRemoveShare={removeShare}
+      onSwitchName={() => {
+        clearParticipantId(sessionId)
+        setParticipantId(null)
+      }}
+      onVerify={verifyPayment}
+      onUnverify={unverifyPayment}
+      onMarkAsCash={(participantId, amount, paidItemIds, paidItemQuantities, paidShareGroupIds) =>
+        markAsCash(participantId, amount, paidItemIds, paidItemQuantities, paidShareGroupIds)
+      }
+      onOwnerConfirm={(participantId, amount, paidItemIds, paidItemQuantities, paidShareGroupIds) =>
+        ownerConfirmPayment(participantId, amount, paidItemIds, paidItemQuantities, paidShareGroupIds)
+      }
+    />
+  </>
+) : (
+  <>
+    <div className="max-w-md mx-auto px-6 pt-6">
+      <ReceiptManager
+        receipts={receipts}
+        canManage={false}
+        onUpload={async () => {}}
+        onDelete={async () => {}}
+      />
+    </div>
+    <ItemTicker
+      session={data.session}
+      participant={currentParticipant}
+      participants={data.participants}
+      items={data.items}
+      soloQty={soloQty}
+      allAssignments={allAssignments}
+      myPayment={getPayment(currentParticipant.id)}
+      lockedItemIds={lockedItemIds}
+      onIncrement={incrementSolo}
+      onDecrement={decrementSolo}
+      onCreateShare={createShare}
+      onConfirmShare={confirmShare}
+      onRejectShare={rejectShare}
+      onRemoveShare={removeShare}
+      onSwitchName={() => {
+        clearParticipantId(sessionId)
+        setParticipantId(null)
+      }}
+      onClaimPayment={(amount, method, paidItemIds, paidItemQuantities, paidShareGroupIds) =>
+        claimPayment(
+          currentParticipant.id,
+          amount,
+          method,
+          paidItemIds,
+          paidItemQuantities,
+          paidShareGroupIds
+        )
+      }
+    />
+  </>
+)}
     </>
   )
 }
