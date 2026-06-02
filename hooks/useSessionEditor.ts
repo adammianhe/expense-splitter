@@ -81,7 +81,7 @@ export function useSessionEditor(
 
     if (error) {
       if (error.code === "23505") {
-        throw new Error("Nama dah ada dalam list")
+        throw new Error("Name already exists in the list")
       }
       throw error
     }

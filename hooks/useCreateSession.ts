@@ -32,12 +32,12 @@ export function useCreateSession() {
   })
 
   const validate = (): string | null => {
-    if (!sessionName.trim()) return "Sila taip nama session"
-    if (items.some((i) => !i.name.trim() || !i.price)) return "Sila isi semua item"
-    if (participants.some((p) => !p.name.trim())) return "Sila isi semua nama peserta"
-    if (participants.length < 1) return "Tambah sekurang-kurangnya seorang peserta"
-    if (tax.enabled && !tax.value) return "Sila isi nilai tax"
-    if (service.enabled && !service.value) return "Sila isi nilai service charge"
+    if (!sessionName.trim()) return "Please enter a session name"
+    if (items.some((i) => !i.name.trim() || !i.price)) return "Please fill in all item details"
+    if (participants.some((p) => !p.name.trim())) return "Please fill in all participant names"
+    if (participants.length < 1) return "Please add at least one participant"
+    if (tax.enabled && !tax.value) return "Please enter a tax value"
+    if (service.enabled && !service.value) return "Please enter a service charge value"
     return null
   }
 

@@ -41,7 +41,7 @@ export default function ItemsEditor({
 
   const handleAdd = async () => {
     if (!newName.trim() || !newPrice) {
-      alert("Isi nama dan harga")
+      alert("Fill in name and price")
       return
     }
     setProcessing(true)
@@ -90,7 +90,7 @@ export default function ItemsEditor({
 
   if (allTickers.length > 0) {
     const confirmed = confirm(
-      `${allTickers.length} orang ticked "${item.name}" (${allTickers.join(", ")}). Padam jugak?`
+      `${allTickers.length} people ticked "${item.name}" (${allTickers.join(", ")}). Delete anyway?`
     )
     if (!confirmed) return
   }

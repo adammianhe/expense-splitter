@@ -216,9 +216,9 @@ const handleItemClick = (itemId: string) => {
 
   const handleNudge = (participantName: string, amount: number) => {
     const url = window.location.href
-    const message = `Eh ${participantName}, bayar makan tadi ye 👀 RM ${amount.toFixed(2)} — ${url}`
+    const message = `Hey ${participantName}, please pay for the meal 👀 RM ${amount.toFixed(2)} — ${url}`
     navigator.clipboard.writeText(message)
-    alert("Message copied! Paste kat WhatsApp ya.")
+    alert("Message copied! Paste it in WhatsApp.")
   }
 
   const handleMarkAsCash = async (bill: ParticipantBill) => {
@@ -250,7 +250,7 @@ const handleItemClick = (itemId: string) => {
   }
 
   const handleUnverify = async (paymentId: string) => {
-    if (!confirm("Mark this payment as unverified? Person akan dapat notification.")) return
+    if (!confirm("Mark this payment as unverified? The person will be notified.")) return
     setProcessingId(paymentId)
     try {
       await onUnverify(paymentId)
@@ -610,7 +610,7 @@ const handleItemClick = (itemId: string) => {
                 type="text"
                 value={newParticipantName}
                 onChange={(e) => setNewParticipantName(e.target.value)}
-                placeholder="Nama peserta baru"
+                placeholder="New participant name"
                 autoFocus
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:border-black"
               />

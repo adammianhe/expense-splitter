@@ -98,7 +98,7 @@ export default function ItemTicker({
       }
     if (isUnverified)
       return {
-        text: "❌ Payment unverified by owner — bayar lagi sekali",
+        text: "❌ Payment unverified by owner — please pay again",
         color: "bg-red-100 text-red-800",
       }
     return null
@@ -215,13 +215,13 @@ export default function ItemTicker({
               onClick={() => setAddingMore(true)}
               className="mt-3 w-full text-sm"
             >
-              + Eh, ada lagi nak tambah
+              + Add more items
             </Button>
           )}
 
           {addingMore && (
             <div className="mt-3 bg-blue-50 border border-blue-200 rounded-xl p-3 text-sm text-blue-800">
-              💡 Tick more items below. Items dah bayar takleh ubah dah.
+              💡 Tick more items below. Items you've paid for can't be changed.
               <button
                 onClick={() => setAddingMore(false)}
                 className="block mt-1 text-xs underline text-blue-600"
@@ -294,9 +294,9 @@ export default function ItemTicker({
         {/* All settled message */}
         {hasPaid && mySubtotal === 0 && !addingMore && (
           <div className="bg-green-50 border border-green-200 rounded-xl p-4 text-center">
-            <div className="text-green-800 font-medium">🎉 Awak dah settle!</div>
+            <div className="text-green-800 font-medium">🎉 You're all settled!</div>
             <div className="text-green-600 text-sm mt-1">
-              Total dibayar: RM {Number(myPayment?.amount_paid || 0).toFixed(2)}
+              Total paid: RM {Number(myPayment?.amount_paid || 0).toFixed(2)}
             </div>
           </div>
         )}
@@ -311,7 +311,7 @@ export default function ItemTicker({
               onClick={() => setShowPayment(true)}
               className="w-full py-4 text-base"
             >
-              {hasPaid ? "Bayar Tambahan" : isUnverified ? "Bayar Lagi Sekali" : "Bayar"} — RM{" "}
+              {hasPaid ? "Pay Additional" : isUnverified ? "Pay Again" : "Pay"} — RM{" "}
               {finalTotal.toFixed(2)}
             </Button>
           </div>

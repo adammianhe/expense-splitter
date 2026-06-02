@@ -7,10 +7,10 @@ export default function HomePage() {
     <main className="min-h-screen flex flex-col items-center justify-center p-6 bg-gray-50">
       <div className="max-w-md w-full text-center space-y-6">
         <h1 className="text-4xl font-bold text-gray-900">
-          Split Bill Tanpa Drama
+          Split Bill, No Drama
         </h1>
         <p className="text-gray-600">
-          Bayar makan dengan kawan tanpa pening kepala. No login, no install, just share link.
+          Split bills with friends without the headache. No login, no install, just share a link.
         </p>
 
         <Link
@@ -21,7 +21,7 @@ export default function HomePage() {
         </Link>
 
         <p className="text-sm text-gray-500">
-          Buat sesi, share link, kawan tick makanan, semua settle.
+          Create a session, share the link, friends tick items, everyone settles up.
         </p>
       </div>
     </main>

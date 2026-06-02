@@ -48,8 +48,8 @@ export default function NamePicker({ sessionId, participants, onPicked }: Props)
     <main className="min-h-screen bg-gray-50 p-6 flex flex-col items-center justify-center">
       <div className="max-w-md w-full space-y-6">
         <div className="text-center">
-          <h1 className="text-2xl font-bold text-gray-900 mb-2">Pilih Nama Awak</h1>
-          <p className="text-gray-600 text-sm">Tap nama anda dari list ni</p>
+          <h1 className="text-2xl font-bold text-gray-900 mb-2">Pick Your Name</h1>
+          <p className="text-gray-600 text-sm">Tap your name from the list</p>
         </div>
 
         <div className="space-y-2">
@@ -67,7 +67,7 @@ export default function NamePicker({ sessionId, participants, onPicked }: Props)
 
         {!adding ? (
           <Button variant="ghost" onClick={() => setAdding(true)} className="w-full">
-            + Nama saya takde, tambah sendiri
+            + My name is not listed, add it myself
           </Button>
         ) : (
           <div className="space-y-2">
@@ -75,7 +75,7 @@ export default function NamePicker({ sessionId, participants, onPicked }: Props)
               type="text"
               value={newName}
               onChange={(e) => setNewName(e.target.value)}
-              placeholder="Taip nama awak"
+              placeholder="Type your name"
               autoFocus
               className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:border-black"
             />

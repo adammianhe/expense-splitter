@@ -32,7 +32,7 @@ export default function PaymentModal({ session, amount, onConfirm, onClose }: Pr
         {/* Header */}
         <div className="flex items-start justify-between">
           <div>
-            <h2 className="text-xl font-bold text-gray-900">Bayar Sekarang</h2>
+            <h2 className="text-xl font-bold text-gray-900">Pay Now</h2>
             <p className="text-sm text-gray-500 mt-1">
               Total: <span className="font-semibold text-gray-900">RM {amount.toFixed(2)}</span>
             </p>
@@ -78,17 +78,17 @@ export default function PaymentModal({ session, amount, onConfirm, onClose }: Pr
                 />
               </div>
               <p className="text-sm text-gray-600 text-center">
-                Scan QR ni, bayar <strong>RM {amount.toFixed(2)}</strong>, then click confirm
+                Scan this QR code, pay <strong>RM {amount.toFixed(2)}</strong>, then click confirm
               </p>
             </div>
           ) : (
             <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-4 text-sm text-yellow-800">
-              ⚠️ Owner belum upload QR code. Tanya owner untuk payment details.
+              ⚠️ The owner has not uploaded a QR code yet. Please ask the owner for payment details.
             </div>
           )
         ) : (
           <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 text-sm text-blue-800">
-            💵 Bagi cash <strong>RM {amount.toFixed(2)}</strong> kat owner, then click confirm di bawah.
+            💵 Pay <strong>RM {amount.toFixed(2)}</strong> in cash to the owner, then click confirm below.
           </div>
         )}
 
@@ -99,11 +99,11 @@ export default function PaymentModal({ session, amount, onConfirm, onClose }: Pr
           disabled={loading}
           className="w-full py-3"
         >
-          {loading ? "Saving..." : "Saya Dah Bayar ✓"}
+          {loading ? "Saving..." : "I Have Paid ✓"}
         </Button>
 
         <p className="text-xs text-gray-500 text-center">
-          Owner akan verify payment awak. Pastikan dah betul-betul bayar.
+          The owner will verify your payment. Please ensure you have paid correctly.
         </p>
       </div>
     </div>
