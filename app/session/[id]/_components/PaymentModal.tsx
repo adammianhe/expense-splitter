@@ -4,6 +4,7 @@ import { useState } from "react"
 import { Session } from "@/types"
 import Button from "@/components/ui/Button"
 import { QrCode, Banknote, AlertTriangle, Check } from "lucide-react"
+import Spinner from "@/components/ui/Spinner"
 
 type Props = {
   session: Session
@@ -101,22 +102,25 @@ export default function PaymentModal({ session, amount, onConfirm, onClose }: Pr
 
         {/* Confirm button */}
         <Button
-          variant="primary"
-          onClick={handleConfirm}
-          disabled={loading}
-          className="w-full py-3"
-        >
-          <span className="flex items-center justify-center gap-2">
-            {loading ? (
-              "Saving..."
-            ) : (
-              <>
-                <Check size={16} />
-                I Have Paid
-              </>
-            )}
-          </span>
-        </Button>
+  variant="primary"
+  onClick={handleConfirm}
+  disabled={loading}
+  className="w-full py-3"
+>
+  <span className="flex items-center justify-center gap-2">
+    {loading ? (
+      <>
+        <Spinner size={16} />
+        Saving...
+      </>
+    ) : (
+      <>
+        <Check size={16} />
+        I Have Paid
+      </>
+    )}
+  </span>
+</Button>
 
         <p className="text-xs text-gray-500 text-center">
           The owner will verify your payment. Please ensure you have paid correctly.

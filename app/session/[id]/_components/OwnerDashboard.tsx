@@ -9,6 +9,7 @@ import ItemsEditor from "./ItemsEditor"
 import SharePickerModal from "./SharePickerModal"
 import ReceiptManager from "./ReceiptManager"
 import { Link2, Pencil, Banknote, Bell, Lock, AlertTriangle, Camera, Share2, Plus, X, Check } from "lucide-react"
+import Spinner from "@/components/ui/Spinner"
 
 type Props = {
   receipts: import("@/types").Receipt[]
@@ -836,15 +837,20 @@ export default function OwnerDashboard({
               </div>
 
               <Button
-                variant="primary"
-                onClick={handleConfirm}
-                disabled={confirming}
-                className="w-full mt-3 py-3"
-              >
-                {confirming
-                  ? "Saving..."
-                  : `Confirm — RM ${newTotalToConfirm.toFixed(2)}`}
-              </Button>
+  variant="primary"
+  onClick={handleConfirm}
+  disabled={confirming}
+  className="w-full mt-3 py-3"
+>
+  {confirming ? (
+    <span className="flex items-center justify-center gap-2">
+      <Spinner size={16} />
+      Saving...
+    </span>
+  ) : (
+    `Confirm — RM ${newTotalToConfirm.toFixed(2)}`
+  )}
+</Button>
             </div>
           )}
 

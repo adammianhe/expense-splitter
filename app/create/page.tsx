@@ -9,6 +9,7 @@ import QRUploadSection from "./_components/QRUploadSection"
 import Button from "@/components/ui/Button"
 import ReceiptUploadSection from "./_components/ReceiptUploadSection"
 import AppHeader from "@/components/AppHeader"
+import Spinner from "@/components/ui/Spinner"
 
 export default function CreateSessionPage() {
   const {
@@ -54,13 +55,20 @@ export default function CreateSessionPage() {
 />
 
         <Button
-          variant="primary"
-          onClick={createSession}
-          disabled={loading}
-          className="w-full py-4 text-base"
-        >
-          {loading ? "Creating..." : "Create Session"}
-        </Button>
+  variant="primary"
+  onClick={createSession}
+  disabled={loading}
+  className="w-full py-4 text-lg"
+>
+  {loading ? (
+    <span className="flex items-center justify-center gap-2">
+      <Spinner size={18} />
+      Creating...
+    </span>
+  ) : (
+    "Create Session"
+  )}
+</Button>
       </div>
     </main>
     </>
