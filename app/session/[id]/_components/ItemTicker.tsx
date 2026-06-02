@@ -5,18 +5,23 @@ import { Item, Participant, Session, Payment } from "@/types"
 import { calculateBill, roundToTwoDecimals } from "@/lib/utils"
 import Button from "@/components/ui/Button"
 import PaymentModal from "./PaymentModal"
+import SharePickerModal from "./SharePickerModal"
 
 type Props = {
   session: Session
   participant: Participant
   participants: Participant[]
   items: Item[]
-  tickedQty: Map<string, number>
+  soloQty: Map<string, number>
   allAssignments: any[]
   myPayment: Payment | null
   lockedItemIds: Set<string>
   onIncrement: (itemId: string) => void
   onDecrement: (itemId: string) => void
+  onCreateShare: (itemId: string, quantity: number, taggedIds: string[]) => Promise<void>
+  onConfirmShare: (shareGroupId: string) => Promise<void>
+  onRejectShare: (shareGroupId: string) => Promise<void>
+  onRemoveShare: (shareGroupId: string) => Promise<void>
   onSwitchName: () => void
   onClaimPayment: (amount: number, method: "qr" | "cash", paidItemIds: string[]) => Promise<void>
 }
@@ -26,76 +31,136 @@ export default function ItemTicker({
   participant,
   participants,
   items,
-  tickedQty,
+  soloQty,
   allAssignments,
   myPayment,
   lockedItemIds,
   onIncrement,
   onDecrement,
+  onCreateShare,
+  onConfirmShare,
+  onRejectShare,
+  onRemoveShare,
   onSwitchName,
   onClaimPayment,
 }: Props) {
   const [showPayment, setShowPayment] = useState(false)
   const [addingMore, setAddingMore] = useState(false)
+  const [shareItem, setShareItem] = useState<Item | null>(null)
 
   const paidItemIds = new Set(myPayment?.paid_item_ids || [])
   const hasPaid = paidItemIds.size > 0
 
-  const myQty = (itemId: string): number => tickedQty.get(itemId) || 0
+  const mySolo = (itemId: string): number => soloQty.get(itemId) || 0
 
-  // How many of an item have been claimed in total
-  const getTotalClaimed = (itemId: string): number => {
-    return allAssignments
-      .filter((a) => a.item_id === itemId && a.status !== "rejected")
-      .reduce((sum, a) => sum + (Number(a.quantity) || 1), 0)
-  }
-
-  // How many of this item this participant claimed
-  const getParticipantQty = (itemId: string, pid: string): number => {
-    const a = allAssignments.find(
-      (a) =>
-        a.item_id === itemId &&
-        a.participant_id === pid &&
-        a.status !== "rejected"
+  // Get all share groups for an item
+  const getItemShareGroups = (itemId: string) => {
+    const groupIds = new Set(
+      allAssignments
+        .filter((a) => a.item_id === itemId && a.share_group_id !== null)
+        .map((a) => a.share_group_id)
     )
-    return a ? Number(a.quantity) || 1 : 0
+
+    return Array.from(groupIds).map((groupId) => {
+      const members = allAssignments.filter((a) => a.share_group_id === groupId)
+      const item = items.find((i) => i.id === itemId)
+      const quantity = Number(members[0]?.quantity || 0)
+      const initiatorId = members[0]?.assigned_by_participant_id
+      const allConfirmed = members.every((m) => m.status === "confirmed")
+      const myMembership = members.find((m) => m.participant_id === participant.id)
+
+      return {
+        groupId: groupId as string,
+        quantity,
+        initiatorId,
+        members: members.map((m) => {
+          const p = participants.find((pp) => pp.id === m.participant_id)
+          return {
+            id: m.participant_id,
+            name: p?.name || "Unknown",
+            status: m.status as "pending" | "confirmed" | "rejected",
+            isInitiator: m.participant_id === initiatorId,
+          }
+        }),
+        allConfirmed,
+        myStatus: myMembership?.status,
+        isMine: !!myMembership,
+        isInitiator: initiatorId === participant.id,
+        item,
+      }
+    })
   }
 
-  // Other participants who claimed this item (excluding self)
-  const getOtherSharers = (itemId: string): Participant[] => {
-    const ids = allAssignments
+  // Total confirmed claims (solo + share) for an item
+  const getTotalClaimed = (itemId: string): number => {
+    const solo = allAssignments
       .filter(
         (a) =>
           a.item_id === itemId &&
-          a.status !== "rejected" &&
-          a.participant_id !== participant.id
+          a.share_group_id === null &&
+          a.status === "confirmed"
       )
-      .map((a) => a.participant_id)
-    return participants.filter((p) => ids.includes(p.id))
+      .reduce((s, a) => s + Number(a.quantity), 0)
+
+    const shareGroupIds = new Set(
+      allAssignments
+        .filter((a) => a.item_id === itemId && a.share_group_id !== null)
+        .map((a) => a.share_group_id)
+    )
+
+    let shareTotal = 0
+    for (const groupId of shareGroupIds) {
+      const members = allAssignments.filter((a) => a.share_group_id === groupId)
+      const allConfirmed = members.every((m) => m.status === "confirmed")
+      if (allConfirmed) shareTotal += Number(members[0].quantity)
+    }
+
+    return solo + shareTotal
   }
 
-  // Calculate this person's share for one item (not including tax)
+  // Calculate my share of an item (solo + confirmed shares)
   const calculateMyItemShare = (item: Item): number => {
-    const mine = myQty(item.id)
-    if (mine === 0) return 0
-    const totalClaimed = getTotalClaimed(item.id)
-    const effective = Math.min(totalClaimed, item.quantity)
-    return totalClaimed > 0
-      ? (mine / totalClaimed) * (Number(item.price) * effective)
-      : 0
+    let total = 0
+
+    const solo = mySolo(item.id)
+    if (solo > 0) total += solo * Number(item.price)
+
+    const shares = getItemShareGroups(item.id).filter(
+      (g) => g.isMine && g.allConfirmed
+    )
+    for (const g of shares) {
+      total += (g.quantity * Number(item.price)) / g.members.length
+    }
+
+    return total
   }
 
-  // Items still NOT paid for
-  const unpaidItems = items.filter(
-    (item) => myQty(item.id) > 0 && !paidItemIds.has(item.id)
+  // Items still NOT paid for, with my contribution > 0
+  const unpaidItems = items.filter((item) => {
+    const myContribution = calculateMyItemShare(item)
+    return myContribution > 0 && !paidItemIds.has(item.id)
+  })
+
+  // Items with my pending shares — exclude from payment
+  const itemsWithMyPendingShares = new Set(
+    items
+      .filter((item) =>
+        getItemShareGroups(item.id).some(
+          (g) => g.isMine && !g.allConfirmed
+        )
+      )
+      .map((i) => i.id)
   )
 
-  const mySubtotal = unpaidItems.reduce(
+  const payableItems = unpaidItems.filter(
+    (item) => !itemsWithMyPendingShares.has(item.id)
+  )
+
+  const mySubtotal = payableItems.reduce(
     (sum, item) => sum + calculateMyItemShare(item),
     0
   )
 
-  // Total session subtotal
   const totalSessionSubtotal = items.reduce((sum, item) => {
     const claimed = getTotalClaimed(item.id)
     const effective = Math.min(claimed, item.quantity)
@@ -137,9 +202,14 @@ export default function ItemTicker({
   const itemsLocked = hasPaid && !addingMore && !isUnverified
 
   const handleClaimPayment = async (method: "qr" | "cash") => {
-    const itemIdsToPay = unpaidItems.map((i) => i.id)
+    const itemIdsToPay = payableItems.map((i) => i.id)
     await onClaimPayment(finalTotal, method, itemIdsToPay)
     setAddingMore(false)
+  }
+
+  const handleCreateShare = async (quantity: number, taggedIds: string[]) => {
+    if (!shareItem) return
+    await onCreateShare(shareItem.id, quantity, taggedIds)
   }
 
   return (
@@ -169,19 +239,30 @@ export default function ItemTicker({
           </h2>
           <div className="space-y-2">
             {items.map((item) => {
-              const mine = myQty(item.id)
+              const mine = mySolo(item.id)
               const isPaidItem = paidItemIds.has(item.id)
               const totalClaimed = getTotalClaimed(item.id)
-              const remaining = Math.max(0, item.quantity - totalClaimed)
+              const remaining = item.quantity - totalClaimed
               const myShare = calculateMyItemShare(item)
-              const otherSharers = getOtherSharers(item.id)
               const lockedByOthers = lockedItemIds.has(item.id) && !isPaidItem
 
               const isDisabled = isPaidItem || itemsLocked || lockedByOthers
-              const canIncrement = !isDisabled && (mine + 1) + (totalClaimed - mine) <= item.quantity
-              const canDecrement = !isDisabled && mine > 0
+              const isTicked = mine > 0 || myShare > 0
 
-              const isTicked = mine > 0
+              const shareGroups = getItemShareGroups(item.id)
+              const otherSolosNames = allAssignments
+                .filter(
+                  (a) =>
+                    a.item_id === item.id &&
+                    a.share_group_id === null &&
+                    a.status !== "rejected" &&
+                    a.participant_id !== participant.id
+                )
+                .map((a) => {
+                  const p = participants.find((pp) => pp.id === a.participant_id)
+                  return p?.name
+                })
+                .filter(Boolean) as string[]
 
               return (
                 <div
@@ -192,6 +273,7 @@ export default function ItemTicker({
                       : "bg-white border-gray-200"
                   } ${isDisabled ? "opacity-60" : ""}`}
                 >
+                  {/* Item header */}
                   <div className="flex items-center justify-between gap-3">
                     <div className="flex-1 min-w-0">
                       <div className="font-medium text-sm">
@@ -207,11 +289,11 @@ export default function ItemTicker({
                       </div>
                     </div>
 
-                    {/* Quantity controls */}
+                    {/* Solo quantity controls */}
                     <div className="flex items-center gap-2 flex-shrink-0">
                       <button
                         onClick={() => onDecrement(item.id)}
-                        disabled={!canDecrement}
+                        disabled={isDisabled || mine <= 0}
                         className={`w-8 h-8 rounded-full font-bold text-lg flex items-center justify-center transition ${
                           isTicked
                             ? "bg-white/20 text-white disabled:opacity-30"
@@ -225,7 +307,7 @@ export default function ItemTicker({
                       </span>
                       <button
                         onClick={() => onIncrement(item.id)}
-                        disabled={!canIncrement}
+                        disabled={isDisabled}
                         className={`w-8 h-8 rounded-full font-bold text-lg flex items-center justify-center transition ${
                           isTicked
                             ? "bg-white/20 text-white disabled:opacity-30"
@@ -237,23 +319,102 @@ export default function ItemTicker({
                     </div>
                   </div>
 
-                  {/* Status info */}
+                  {/* Info row */}
                   <div className={`text-xs mt-2 ${isTicked ? "text-gray-300" : "text-gray-500"}`}>
-                    {mine > 0 && (
-                      <span>Your share: RM {myShare.toFixed(2)}</span>
-                    )}
-                    {otherSharers.length > 0 && (
+                    {myShare > 0 && <span>Your share: RM {myShare.toFixed(2)}</span>}
+                    {otherSolosNames.length > 0 && (
                       <span>
-                        {mine > 0 ? " • " : ""}
-                        Shared with {otherSharers.map((s) => s.name).join(", ")}
+                        {myShare > 0 ? " • " : ""}
+                        {otherSolosNames.join(", ")} claimed
                       </span>
                     )}
-                    {item.quantity > 1 && remaining > 0 && (
-                      <span className={mine > 0 || otherSharers.length > 0 ? " • " : ""}>
-                        {remaining} left
-                      </span>
+                    {item.quantity > 1 && (
+                      <>
+                        {remaining > 0 && (
+                          <>
+                            {(myShare > 0 || otherSolosNames.length > 0) && <span> • </span>}
+                            <span>{remaining} left</span>
+                          </>
+                        )}
+                        {remaining < 0 && (
+                          <>
+                            {(myShare > 0 || otherSolosNames.length > 0) && <span> • </span>}
+                            <span className="text-yellow-400">over by {Math.abs(remaining)}</span>
+                          </>
+                        )}
+                      </>
                     )}
                   </div>
+
+                  {/* Shares display */}
+                  {shareGroups.length > 0 && (
+                    <div className={`mt-3 pt-3 border-t space-y-2 ${isTicked ? "border-white/20" : "border-gray-200"}`}>
+                      {shareGroups.map((g) => {
+                        const memberNames = g.members.map((m) => m.name).join(", ")
+                        const status = g.allConfirmed
+                          ? "✓ Confirmed"
+                          : g.members.some((m) => m.status === "rejected")
+                          ? "❌ Rejected"
+                          : "⏳ Pending"
+
+                        return (
+                          <div
+                            key={g.groupId}
+                            className={`text-xs p-2 rounded ${
+                              isTicked ? "bg-white/10" : "bg-gray-50"
+                            }`}
+                          >
+                            <div className={`flex items-center justify-between gap-2 ${isTicked ? "text-gray-200" : "text-gray-700"}`}>
+                              <span>
+                                Share: {g.quantity} × split with {memberNames}
+                              </span>
+                              <span className="font-medium">{status}</span>
+                            </div>
+
+                            {/* If I'm tagged but haven't responded */}
+                            {g.isMine && g.myStatus === "pending" && !g.isInitiator && (
+                              <div className="flex gap-2 mt-2">
+                                <button
+                                  onClick={() => onConfirmShare(g.groupId)}
+                                  className="flex-1 bg-green-600 text-white text-xs py-1.5 rounded hover:bg-green-700"
+                                >
+                                  ✓ Accept
+                                </button>
+                                <button
+                                  onClick={() => onRejectShare(g.groupId)}
+                                  className="flex-1 bg-red-600 text-white text-xs py-1.5 rounded hover:bg-red-700"
+                                >
+                                  ✗ Reject
+                                </button>
+                              </div>
+                            )}
+
+                            {/* If I initiated this share */}
+                            {g.isInitiator && !g.allConfirmed && !isDisabled && (
+                              <button
+                                onClick={() => {
+                                  if (confirm("Remove this share?")) onRemoveShare(g.groupId)
+                                }}
+                                className={`text-xs mt-1 underline ${isTicked ? "text-red-300" : "text-red-600"}`}
+                              >
+                                Cancel share
+                              </button>
+                            )}
+                          </div>
+                        )
+                      })}
+                    </div>
+                  )}
+
+                  {/* Add share button — hidden by default (Option B) */}
+                  {!isDisabled && !isPaidItem && (
+                    <button
+                      onClick={() => setShareItem(item)}
+                      className={`mt-2 text-xs font-medium ${isTicked ? "text-blue-300" : "text-blue-600"} hover:underline`}
+                    >
+                      + Add share
+                    </button>
+                  )}
 
                   {isPaidItem && (
                     <div className={`text-xs mt-1 font-medium ${isTicked ? "text-green-300" : "text-green-600"}`}>
@@ -293,6 +454,13 @@ export default function ItemTicker({
             </div>
           )}
         </div>
+
+        {/* Pending shares warning */}
+        {itemsWithMyPendingShares.size > 0 && (
+          <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-3 text-sm text-yellow-800">
+            ⏳ Some shares are waiting for confirmation. You can pay other items now and pay those after all confirm.
+          </div>
+        )}
 
         {/* Bill Breakdown */}
         {mySubtotal > 0 && (
@@ -339,7 +507,7 @@ export default function ItemTicker({
               </span>
             </div>
 
-            <p className="text-xs text-gray-500">Shared items auto-split</p>
+            <p className="text-xs text-gray-500">Confirmed shares included</p>
           </div>
         )}
 
@@ -374,6 +542,16 @@ export default function ItemTicker({
           amount={finalTotal}
           onConfirm={handleClaimPayment}
           onClose={() => setShowPayment(false)}
+        />
+      )}
+
+      {shareItem && (
+        <SharePickerModal
+          item={shareItem}
+          currentParticipantId={participant.id}
+          participants={participants}
+          onConfirm={handleCreateShare}
+          onClose={() => setShareItem(null)}
         />
       )}
     </main>

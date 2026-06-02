@@ -60,8 +60,22 @@ export type ItemAssignment = {
   assigned_by_participant_id: string | null
   status: 'pending' | 'confirmed' | 'rejected'
   quantity: number
+  share_group_id: string | null
   created_at: string
   updated_at: string
+}
+
+// A share group — group of people sharing N units of an item
+export type ShareGroup = {
+  id: string
+  itemId: string
+  quantity: number // how many units they're sharing
+  members: {
+    participantId: string
+    name: string
+    status: 'pending' | 'confirmed' | 'rejected'
+    isInitiator: boolean
+  }[]
 }
 
 export type Payment = {

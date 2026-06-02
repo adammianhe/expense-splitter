@@ -121,20 +121,20 @@ export default function ItemsSection({ items, onChange }: Props) {
                 </div>
 
                 {/* Price */}
-                <div className="flex flex-col flex-1">
-                  <span className="text-xs text-gray-500 mb-1">
-                    {item.priceMode === "each" ? "Each (RM)" : "Total (RM)"}
-                  </span>
-                  <input
-                    type="number"
-                    step="0.01"
-                    min="0"
-                    value={item.price}
-                    onChange={(e) => updateItem(index, "price", e.target.value)}
-                    placeholder="0.00"
-                    className="px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:border-black text-gray-900 bg-white placeholder:text-gray-400"
-                  />
-                </div>
+<div className="flex flex-col flex-1 min-w-0">
+  <span className="text-xs text-gray-500 mb-1">
+    {item.priceMode === "each" ? "Each (RM)" : "Total (RM)"}
+  </span>
+  <input
+    type="number"
+    step="0.01"
+    min="0"
+    value={item.price}
+    onChange={(e) => updateItem(index, "price", e.target.value)}
+    placeholder="0.00"
+    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:border-black text-gray-900 bg-white placeholder:text-gray-400"
+  />
+</div>
               </div>
 
               {/* Auto-calculated label */}

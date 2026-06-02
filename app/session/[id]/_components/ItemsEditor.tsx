@@ -214,7 +214,7 @@ export default function ItemsEditor({
                       </div>
                     </div>
 
-                    <div className="flex flex-col flex-1">
+                    <div className="flex flex-col flex-1 min-w-0">
                       <span className="text-xs text-gray-500 mb-1">
                         {editMode === "each" ? "Each (RM)" : "Total (RM)"}
                       </span>
@@ -362,7 +362,7 @@ export default function ItemsEditor({
               </div>
             </div>
 
-            <div className="flex flex-col flex-1">
+            <div className="flex flex-col flex-1 min-w-0">
               <span className="text-xs text-gray-500 mb-1">
                 {newMode === "each" ? "Each (RM)" : "Total (RM)"}
               </span>

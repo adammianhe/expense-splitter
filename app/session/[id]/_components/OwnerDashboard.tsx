@@ -6,13 +6,14 @@ import { ParticipantBill } from "@/hooks/useSessionBills"
 import { calculateBill, roundToTwoDecimals, formatRelativeDate } from "@/lib/utils"
 import Button from "@/components/ui/Button"
 import ItemsEditor from "./ItemsEditor"
+import SharePickerModal from "./SharePickerModal"
 
 type Props = {
   session: Session
   participant: Participant
   bills: ParticipantBill[]
   items: Item[]
-  tickedQty: Map<string, number>
+  soloQty: Map<string, number>
   allAssignments: any[]
   summary: {
     totalBill: number
@@ -30,6 +31,10 @@ type Props = {
   onDeleteParticipant: (participantId: string) => Promise<void>
   onIncrementItem: (itemId: string) => void
   onDecrementItem: (itemId: string) => void
+  onCreateShare: (itemId: string, quantity: number, taggedIds: string[]) => Promise<void>
+  onConfirmShare: (shareGroupId: string) => Promise<void>
+  onRejectShare: (shareGroupId: string) => Promise<void>
+  onRemoveShare: (shareGroupId: string) => Promise<void>
   onSwitchName: () => void
   onVerify: (paymentId: string) => Promise<void>
   onUnverify: (paymentId: string) => Promise<void>
@@ -42,7 +47,7 @@ export default function OwnerDashboard({
   participant,
   bills,
   items,
-  tickedQty,
+  soloQty,
   allAssignments,
   summary,
   lockedItemIds,
@@ -55,6 +60,10 @@ export default function OwnerDashboard({
   onDeleteParticipant,
   onIncrementItem,
   onDecrementItem,
+  onCreateShare,
+  onConfirmShare,
+  onRejectShare,
+  onRemoveShare,
   onSwitchName,
   onVerify,
   onUnverify,
@@ -69,47 +78,109 @@ export default function OwnerDashboard({
   const [processingParticipant, setProcessingParticipant] = useState(false)
   const [editSnapshot, setEditSnapshot] = useState<Map<string, number> | null>(null)
   const [editMode, setEditMode] = useState(false)
+  const [shareItem, setShareItem] = useState<Item | null>(null)
 
   // Owner's bill
   const myBill = bills.find((b) => b.participant.id === participant.id)
   const myPayment = myBill?.payment
   const confirmedItemIds = new Set(myPayment?.paid_item_ids || [])
 
-  // Detect unconfirmed changes by comparing tickedQty vs confirmed
-  const myQty = (itemId: string): number => tickedQty.get(itemId) || 0
+  const mySolo = (itemId: string): number => soloQty.get(itemId) || 0
+
+  const allParticipants = bills.map((b) => b.participant)
+
+  // Get share groups for an item
+  const getItemShareGroups = (itemId: string) => {
+    const groupIds = new Set(
+      allAssignments
+        .filter((a) => a.item_id === itemId && a.share_group_id !== null)
+        .map((a) => a.share_group_id)
+    )
+
+    return Array.from(groupIds).map((groupId) => {
+      const members = allAssignments.filter((a) => a.share_group_id === groupId)
+      const quantity = Number(members[0]?.quantity || 0)
+      const initiatorId = members[0]?.assigned_by_participant_id
+      const allConfirmed = members.every((m) => m.status === "confirmed")
+      const myMembership = members.find((m) => m.participant_id === participant.id)
+
+      return {
+        groupId: groupId as string,
+        quantity,
+        initiatorId,
+        members: members.map((m) => {
+          const p = allParticipants.find((pp) => pp.id === m.participant_id)
+          return {
+            id: m.participant_id,
+            name: p?.name || "Unknown",
+            status: m.status as "pending" | "confirmed" | "rejected",
+            isInitiator: m.participant_id === initiatorId,
+          }
+        }),
+        allConfirmed,
+        myStatus: myMembership?.status,
+        isMine: !!myMembership,
+        isInitiator: initiatorId === participant.id,
+      }
+    })
+  }
+
+  // Total claimed (solo + confirmed shares)
+  const getTotalClaimed = (itemId: string): number => {
+    const solo = allAssignments
+      .filter(
+        (a) =>
+          a.item_id === itemId &&
+          a.share_group_id === null &&
+          a.status === "confirmed"
+      )
+      .reduce((s, a) => s + Number(a.quantity), 0)
+
+    const shareGroupIds = new Set(
+      allAssignments
+        .filter((a) => a.item_id === itemId && a.share_group_id !== null)
+        .map((a) => a.share_group_id)
+    )
+
+    let shareTotal = 0
+    for (const groupId of shareGroupIds) {
+      const members = allAssignments.filter((a) => a.share_group_id === groupId)
+      const allConfirmed = members.every((m) => m.status === "confirmed")
+      if (allConfirmed) shareTotal += Number(members[0].quantity)
+    }
+
+    return solo + shareTotal
+  }
+
+  // Calculate owner's share of an item (solo + confirmed shares)
+  const calculateMyItemShare = (item: Item): number => {
+    let total = 0
+    const solo = mySolo(item.id)
+    if (solo > 0) total += solo * Number(item.price)
+
+    const shares = getItemShareGroups(item.id).filter(
+      (g) => g.isMine && g.allConfirmed
+    )
+    for (const g of shares) {
+      total += (g.quantity * Number(item.price)) / g.members.length
+    }
+    return total
+  }
+
+  // Has owner changed solo since last confirmation?
   const hasUnconfirmedChanges = items.some((item) => {
-    const mine = myQty(item.id)
+    const mine = mySolo(item.id)
     const wasConfirmed = confirmedItemIds.has(item.id)
     if (mine > 0 && !wasConfirmed) return true
     if (mine === 0 && wasConfirmed) return true
     return false
   })
 
-  const getTotalClaimed = (itemId: string): number => {
-    return allAssignments
-      .filter((a) => a.item_id === itemId && a.status !== "rejected")
-      .reduce((sum, a) => sum + (Number(a.quantity) || 1), 0)
-  }
-
-  const getOtherSharers = (itemId: string): Participant[] => {
-    const ids = allAssignments
-      .filter(
-        (a) =>
-          a.item_id === itemId &&
-          a.status !== "rejected" &&
-          a.participant_id !== participant.id
-      )
-      .map((a) => a.participant_id)
-    return bills.filter((b) => ids.includes(b.participant.id)).map((b) => b.participant)
-  }
-
-  const calculateMyItemShare = (item: Item): number => {
-    const mine = myQty(item.id)
-    if (mine === 0) return 0
-    const totalClaimed = getTotalClaimed(item.id)
-    const effective = Math.min(totalClaimed, item.quantity)
-    return totalClaimed > 0 ? (mine / totalClaimed) * (Number(item.price) * effective) : 0
-  }
+  // Owner's preview subtotal (solo + confirmed shares)
+  const previewSubtotal = items.reduce(
+    (sum, item) => sum + calculateMyItemShare(item),
+    0
+  )
 
   // Total session subtotal
   const totalSessionSubtotal = items.reduce((sum, item) => {
@@ -118,18 +189,12 @@ export default function OwnerDashboard({
     return sum + Number(item.price) * effective
   }, 0)
 
-  const previewSubtotal = items.reduce(
-    (sum, item) => sum + calculateMyItemShare(item),
-    0
-  )
-
   const previewBillCalc = calculateBill(previewSubtotal, totalSessionSubtotal, session)
   const previewTotal = roundToTwoDecimals(previewBillCalc.total)
 
   const hasTax = session.tax_type && Number(session.tax_value) > 0
   const hasService = session.service_type && Number(session.service_value) > 0
 
-  // Payer names per item
   const payerNames: Record<string, string[]> = {}
   items.forEach((item) => {
     const payers = bills
@@ -141,17 +206,16 @@ export default function OwnerDashboard({
     payerNames[item.id] = payers
   })
 
-  // Confirm handler — checks for empty state
   const handleConfirm = async () => {
-    const totalQty = Array.from(tickedQty.values()).reduce((a, b) => a + b, 0)
-    if (totalQty === 0 && myPayment) {
+    const totalSolo = Array.from(soloQty.values()).reduce((a, b) => a + b, 0)
+    if (totalSolo === 0 && myPayment) {
       const confirmed = confirm("Untick everything? Your confirmation will be removed.")
       if (!confirmed) return
     }
 
     setConfirming(true)
     try {
-      const tickedIds = items.filter((i) => myQty(i.id) > 0).map((i) => i.id)
+      const tickedIds = items.filter((i) => mySolo(i.id) > 0).map((i) => i.id)
       await onOwnerConfirm(participant.id, previewTotal, tickedIds)
       setEditMode(false)
       setEditSnapshot(null)
@@ -163,7 +227,7 @@ export default function OwnerDashboard({
   }
 
   const handleEnterEditMode = () => {
-    setEditSnapshot(new Map(tickedQty))
+    setEditSnapshot(new Map(soloQty))
     setEditMode(true)
   }
 
@@ -172,23 +236,19 @@ export default function OwnerDashboard({
       setEditMode(false)
       return
     }
-    // Revert each item to its snapshot quantity
-    const allItemIds = new Set([...tickedQty.keys(), ...editSnapshot.keys()])
+    const allItemIds = new Set([...soloQty.keys(), ...editSnapshot.keys()])
     allItemIds.forEach((itemId) => {
-      const currentQty = tickedQty.get(itemId) || 0
+      const currentQty = soloQty.get(itemId) || 0
       const snapshotQty = editSnapshot.get(itemId) || 0
       const diff = snapshotQty - currentQty
-      if (diff > 0) {
-        for (let i = 0; i < diff; i++) onIncrementItem(itemId)
-      } else if (diff < 0) {
-        for (let i = 0; i < Math.abs(diff); i++) onDecrementItem(itemId)
-      }
+      if (diff > 0) for (let i = 0; i < diff; i++) onIncrementItem(itemId)
+      else if (diff < 0) for (let i = 0; i < Math.abs(diff); i++) onDecrementItem(itemId)
     })
     setEditMode(false)
     setEditSnapshot(null)
   }
 
-  const handleItemClick = (itemId: string, action: "inc" | "dec") => {
+  const handleItemAction = (itemId: string, action: "inc" | "dec") => {
     const isLockedByNonOwner = lockedItemIds.has(itemId)
     const isInOwnerConfirmed = confirmedItemIds.has(itemId)
 
@@ -198,6 +258,11 @@ export default function OwnerDashboard({
 
     if (action === "inc") onIncrementItem(itemId)
     else onDecrementItem(itemId)
+  }
+
+  const handleCreateShare = async (quantity: number, taggedIds: string[]) => {
+    if (!shareItem) return
+    await onCreateShare(shareItem.id, quantity, taggedIds)
   }
 
   const handleShare = async () => {
@@ -332,6 +397,9 @@ export default function OwnerDashboard({
     if (!bill.hasTicked) {
       return { text: "🤔 Hasn't ticked yet", color: "bg-gray-100 text-gray-600" }
     }
+    if (bill.hasPendingShares && !bill.payment) {
+      return { text: "⏳ Has pending shares", color: "bg-yellow-100 text-yellow-800" }
+    }
     if (!bill.payment) {
       return { text: "💸 Ticked, not paid yet", color: "bg-orange-100 text-orange-800" }
     }
@@ -367,7 +435,6 @@ export default function OwnerDashboard({
           </Button>
         </div>
 
-        {/* SHARE LINK */}
         <Button variant="secondary" onClick={handleShare} className="w-full text-sm">
           {copied ? "✓ Link copied!" : "📋 Share Link to Friends"}
         </Button>
@@ -389,20 +456,32 @@ export default function OwnerDashboard({
 
           <div className="space-y-2">
             {items.map((item) => {
-              const mine = myQty(item.id)
+              const mine = mySolo(item.id)
               const isConfirmed = confirmedItemIds.has(item.id)
               const totalClaimed = getTotalClaimed(item.id)
-              const remaining = Math.max(0, item.quantity - totalClaimed)
+              const remaining = item.quantity - totalClaimed
               const lockedByOthers = lockedItemIds.has(item.id) && !isConfirmed
               const inLockedMode = myPayment && !editMode
-              const interactionDisabled = lockedByOthers || inLockedMode
+              const interactionDisabled = !!(lockedByOthers || inLockedMode)
 
               const myShare = calculateMyItemShare(item)
-              const otherSharers = getOtherSharers(item.id)
+              const shareGroups = getItemShareGroups(item.id)
 
-              const canIncrement = !interactionDisabled && totalClaimed < item.quantity
-              const canDecrement = !interactionDisabled && mine > 0
-              const isTicked = mine > 0
+              const otherSolosNames = allAssignments
+                .filter(
+                  (a) =>
+                    a.item_id === item.id &&
+                    a.share_group_id === null &&
+                    a.status !== "rejected" &&
+                    a.participant_id !== participant.id
+                )
+                .map((a) => {
+                  const p = allParticipants.find((pp) => pp.id === a.participant_id)
+                  return p?.name
+                })
+                .filter(Boolean) as string[]
+
+              const isTicked = mine > 0 || myShare > 0
 
               return (
                 <div
@@ -430,8 +509,8 @@ export default function OwnerDashboard({
 
                     <div className="flex items-center gap-2 flex-shrink-0">
                       <button
-                        onClick={() => handleItemClick(item.id, "dec")}
-                        disabled={!canDecrement}
+                        onClick={() => handleItemAction(item.id, "dec")}
+                        disabled={interactionDisabled || mine <= 0}
                         className={`w-7 h-7 rounded-full font-bold text-base flex items-center justify-center transition ${
                           isTicked
                             ? "bg-white/20 text-white disabled:opacity-30"
@@ -442,8 +521,8 @@ export default function OwnerDashboard({
                       </button>
                       <span className="font-bold text-base w-5 text-center">{mine}</span>
                       <button
-                        onClick={() => handleItemClick(item.id, "inc")}
-                        disabled={!canIncrement}
+                        onClick={() => handleItemAction(item.id, "inc")}
+                        disabled={interactionDisabled}
                         className={`w-7 h-7 rounded-full font-bold text-base flex items-center justify-center transition ${
                           isTicked
                             ? "bg-white/20 text-white disabled:opacity-30"
@@ -456,19 +535,98 @@ export default function OwnerDashboard({
                   </div>
 
                   <div className={`text-xs mt-2 ${isTicked ? "text-gray-300" : "text-gray-500"}`}>
-                    {mine > 0 && <span>Your share: RM {myShare.toFixed(2)}</span>}
-                    {otherSharers.length > 0 && (
+                    {myShare > 0 && <span>Your share: RM {myShare.toFixed(2)}</span>}
+                    {otherSolosNames.length > 0 && (
                       <span>
-                        {mine > 0 ? " • " : ""}
-                        Shared with {otherSharers.map((s) => s.name).join(", ")}
+                        {myShare > 0 ? " • " : ""}
+                        {otherSolosNames.join(", ")} claimed
                       </span>
                     )}
-                    {item.quantity > 1 && remaining > 0 && (
-                      <span className={mine > 0 || otherSharers.length > 0 ? " • " : ""}>
-                        {remaining} left
-                      </span>
+                    {item.quantity > 1 && (
+                      <>
+                        {remaining > 0 && (
+                          <>
+                            {(myShare > 0 || otherSolosNames.length > 0) && <span> • </span>}
+                            <span>{remaining} left</span>
+                          </>
+                        )}
+                        {remaining < 0 && (
+                          <>
+                            {(myShare > 0 || otherSolosNames.length > 0) && <span> • </span>}
+                            <span className="text-yellow-400">over by {Math.abs(remaining)}</span>
+                          </>
+                        )}
+                      </>
                     )}
                   </div>
+
+                  {/* Share groups */}
+                  {shareGroups.length > 0 && (
+                    <div className={`mt-3 pt-3 border-t space-y-2 ${isTicked ? "border-white/20" : "border-gray-200"}`}>
+                      {shareGroups.map((g) => {
+                        const memberNames = g.members.map((m) => m.name).join(", ")
+                        const status = g.allConfirmed
+                          ? "✓ Confirmed"
+                          : g.members.some((m) => m.status === "rejected")
+                          ? "❌ Rejected"
+                          : "⏳ Pending"
+
+                        return (
+                          <div
+                            key={g.groupId}
+                            className={`text-xs p-2 rounded ${
+                              isTicked ? "bg-white/10" : "bg-gray-50"
+                            }`}
+                          >
+                            <div className={`flex items-center justify-between gap-2 ${isTicked ? "text-gray-200" : "text-gray-700"}`}>
+                              <span>
+                                Share: {g.quantity} × split with {memberNames}
+                              </span>
+                              <span className="font-medium">{status}</span>
+                            </div>
+
+                            {g.isMine && g.myStatus === "pending" && !g.isInitiator && (
+                              <div className="flex gap-2 mt-2">
+                                <button
+                                  onClick={() => onConfirmShare(g.groupId)}
+                                  className="flex-1 bg-green-600 text-white text-xs py-1.5 rounded hover:bg-green-700"
+                                >
+                                  ✓ Accept
+                                </button>
+                                <button
+                                  onClick={() => onRejectShare(g.groupId)}
+                                  className="flex-1 bg-red-600 text-white text-xs py-1.5 rounded hover:bg-red-700"
+                                >
+                                  ✗ Reject
+                                </button>
+                              </div>
+                            )}
+
+                            {g.isInitiator && !g.allConfirmed && !interactionDisabled && (
+                              <button
+                                onClick={() => {
+                                  if (confirm("Remove this share?")) onRemoveShare(g.groupId)
+                                }}
+                                className={`text-xs mt-1 underline ${isTicked ? "text-red-300" : "text-red-600"}`}
+                              >
+                                Cancel share
+                              </button>
+                            )}
+                          </div>
+                        )
+                      })}
+                    </div>
+                  )}
+
+                  {/* Add share button */}
+                  {!interactionDisabled && (
+                    <button
+                      onClick={() => setShareItem(item)}
+                      className={`mt-2 text-xs font-medium ${isTicked ? "text-blue-300" : "text-blue-600"} hover:underline`}
+                    >
+                      + Add share
+                    </button>
+                  )}
 
                   {isConfirmed && (
                     <div className={`text-xs mt-1 font-medium ${isTicked ? "text-green-300" : "text-green-600"}`}>
@@ -517,7 +675,6 @@ export default function OwnerDashboard({
                 </span>
               </div>
 
-              {/* State 1: Fresh — Confirm */}
               {!myPayment && hasUnconfirmedChanges && (
                 <Button
                   variant="primary"
@@ -529,7 +686,6 @@ export default function OwnerDashboard({
                 </Button>
               )}
 
-              {/* State 2: Locked — Edit */}
               {myPayment && !editMode && (
                 <div className="space-y-2 mt-3">
                   <div className="bg-green-50 border border-green-200 rounded-lg p-2 text-xs text-green-800 text-center">
@@ -545,7 +701,6 @@ export default function OwnerDashboard({
                 </div>
               )}
 
-              {/* State 3: Editing */}
               {myPayment && editMode && (
                 <div className="space-y-2 mt-3">
                   {hasUnconfirmedChanges ? (
@@ -592,10 +747,9 @@ export default function OwnerDashboard({
           )}
         </div>
 
-        {/* ITEMS EDITOR */}
         <ItemsEditor
           items={items}
-          participants={bills.map((b) => b.participant)}
+          participants={allParticipants}
           allAssignments={allAssignments}
           payerNames={payerNames}
           isItemLocked={isItemLocked}
@@ -801,6 +955,17 @@ export default function OwnerDashboard({
           </div>
         </div>
       </div>
+
+      {/* Share Picker Modal */}
+      {shareItem && (
+        <SharePickerModal
+          item={shareItem}
+          currentParticipantId={participant.id}
+          participants={allParticipants}
+          onConfirm={handleCreateShare}
+          onClose={() => setShareItem(null)}
+        />
+      )}
     </main>
   )
 }

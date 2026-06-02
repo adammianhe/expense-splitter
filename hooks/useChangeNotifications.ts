@@ -1,75 +1,184 @@
 "use client"
 
 import { useEffect, useRef } from "react"
-import { Item, Participant } from "@/types"
+import { useToast } from "./useToast"
 
-type ShowToastFn = (text: string, type?: "info" | "success" | "warning" | "error") => void
+type Args = {
+  participantId: string | null
+  participants: any[]
+  items: any[]
+  allAssignments: any[]
+  isInitialLoad: boolean
+}
 
-export function useChangeNotifications(
-  items: Item[],
-  participants: Participant[],
-  showToast: ShowToastFn,
-  isReady: boolean
-) {
-  const prevItemsRef = useRef<Item[]>([])
-  const prevParticipantsRef = useRef<Participant[]>([])
-  const initializedRef = useRef(false)
+export function useChangeNotifications({
+  participantId,
+  participants,
+  items,
+  allAssignments,
+  isInitialLoad,
+}: Args) {
+  const { showToast } = useToast()
+
+  const prevItems = useRef<any[]>([])
+  const prevParticipants = useRef<any[]>([])
+  const prevAssignments = useRef<any[]>([])
 
   useEffect(() => {
-    if (!isReady) return
-
-    // Skip first render (when data first loads)
-    if (!initializedRef.current) {
-      prevItemsRef.current = items
-      prevParticipantsRef.current = participants
-      initializedRef.current = true
+    // Skip during initial load
+    if (isInitialLoad) {
+      prevItems.current = items
+      prevParticipants.current = participants
+      prevAssignments.current = allAssignments
       return
     }
 
-    const prevItems = prevItemsRef.current
-    const prevParticipants = prevParticipantsRef.current
+    // ITEMS — added/removed/edited
+    const prevItemIds = new Set(prevItems.current.map((i) => i.id))
+    const currItemIds = new Set(items.map((i) => i.id))
 
-    // Detect added items
-    const addedItems = items.filter(
-      (i) => !prevItems.some((pi) => pi.id === i.id)
-    )
-    addedItems.forEach((item) => {
-      showToast(`+ ${item.name} added (RM ${Number(item.price).toFixed(2)})`, "info")
-    })
-
-    // Detect deleted items
-    const deletedItems = prevItems.filter(
-      (pi) => !items.some((i) => i.id === pi.id)
-    )
-    deletedItems.forEach((item) => {
-      showToast(`${item.name} removed — bill updated`, "warning")
-    })
-
-    // Detect edited items
     items.forEach((item) => {
-      const prev = prevItems.find((pi) => pi.id === item.id)
-      if (prev && (prev.name !== item.name || Number(prev.price) !== Number(item.price))) {
-        showToast(`${item.name} updated`, "info")
+      if (!prevItemIds.has(item.id)) {
+        showToast(`🍔 New item added: ${item.name}`, "info")
+      } else {
+        const prev = prevItems.current.find((i) => i.id === item.id)
+        if (
+          prev &&
+          (prev.name !== item.name ||
+            Number(prev.price) !== Number(item.price) ||
+            Number(prev.quantity) !== Number(item.quantity))
+        ) {
+          showToast(`✏️ Item updated: ${item.name}`, "info")
+        }
       }
     })
 
-    // Detect added participants
-    const addedParticipants = participants.filter(
-      (p) => !prevParticipants.some((pp) => pp.id === p.id)
-    )
-    addedParticipants.forEach((p) => {
-      showToast(`${p.name} joined the session`, "info")
+    prevItems.current.forEach((item) => {
+      if (!currItemIds.has(item.id)) {
+        showToast(`🗑️ Item removed: ${item.name}`, "info")
+      }
     })
 
-    // Detect removed participants
-    const removedParticipants = prevParticipants.filter(
-      (pp) => !participants.some((p) => p.id === pp.id)
-    )
-    removedParticipants.forEach((p) => {
-      showToast(`${p.name} removed from session`, "warning")
+    // PARTICIPANTS — added/removed
+    const prevPIds = new Set(prevParticipants.current.map((p) => p.id))
+    const currPIds = new Set(participants.map((p) => p.id))
+
+    participants.forEach((p) => {
+      if (!prevPIds.has(p.id)) {
+        showToast(`👋 ${p.name} joined`, "info")
+      }
     })
 
-    prevItemsRef.current = items
-    prevParticipantsRef.current = participants
-  }, [items, participants, showToast, isReady])
+    prevParticipants.current.forEach((p) => {
+      if (!currPIds.has(p.id)) {
+        showToast(`👋 ${p.name} left`, "info")
+      }
+    })
+
+    // SHARES — only notify the current participant about shares involving them
+    if (participantId) {
+      const prevShareRows = prevAssignments.current.filter(
+        (a) => a.share_group_id !== null
+      )
+      const currShareRows = allAssignments.filter((a) => a.share_group_id !== null)
+
+      // Group by share_group_id for both
+      const prevGroups = new Map<string, any[]>()
+      prevShareRows.forEach((row) => {
+        const g = prevGroups.get(row.share_group_id) || []
+        g.push(row)
+        prevGroups.set(row.share_group_id, g)
+      })
+
+      const currGroups = new Map<string, any[]>()
+      currShareRows.forEach((row) => {
+        const g = currGroups.get(row.share_group_id) || []
+        g.push(row)
+        currGroups.set(row.share_group_id, g)
+      })
+
+      // Check NEW share groups (I was tagged)
+      currGroups.forEach((members, groupId) => {
+        if (prevGroups.has(groupId)) return
+
+        const myMembership = members.find(
+          (m) => m.participant_id === participantId
+        )
+        if (!myMembership) return
+
+        // I was just tagged — only notify if I'm NOT the initiator
+        if (myMembership.assigned_by_participant_id !== participantId) {
+          const initiator = participants.find(
+            (p) => p.id === myMembership.assigned_by_participant_id
+          )
+          const item = items.find((i) => i.id === myMembership.item_id)
+          const initiatorName = initiator?.name || "Someone"
+          const itemName = item?.name || "an item"
+          showToast(
+            `🔔 ${initiatorName} wants to share ${itemName} with you`,
+            "info"
+          )
+        }
+      })
+
+      // Check status changes within existing share groups
+      currGroups.forEach((currMembers, groupId) => {
+        const prevMembers = prevGroups.get(groupId)
+        if (!prevMembers) return
+
+        // Find my share in this group
+        const myShare = currMembers.find(
+          (m) => m.participant_id === participantId
+        )
+        if (!myShare) return
+
+        // Only notify me if I initiated this share
+        const isInitiator = myShare.assigned_by_participant_id === participantId
+        if (!isInitiator) return
+
+        const item = items.find((i) => i.id === myShare.item_id)
+        const itemName = item?.name || "an item"
+
+        // Check each other member for status change
+        currMembers.forEach((currMember) => {
+          if (currMember.participant_id === participantId) return
+
+          const prevMember = prevMembers.find(
+            (m) => m.participant_id === currMember.participant_id
+          )
+          if (!prevMember) return
+
+          if (
+            prevMember.status === "pending" &&
+            currMember.status === "confirmed"
+          ) {
+            const memberP = participants.find(
+              (p) => p.id === currMember.participant_id
+            )
+            showToast(
+              `✅ ${memberP?.name || "Someone"} accepted your share of ${itemName}`,
+              "success"
+            )
+          }
+          if (
+            prevMember.status === "pending" &&
+            currMember.status === "rejected"
+          ) {
+            const memberP = participants.find(
+              (p) => p.id === currMember.participant_id
+            )
+            showToast(
+              `❌ ${memberP?.name || "Someone"} rejected your share of ${itemName}`,
+              "error"
+            )
+          }
+        })
+      })
+    }
+
+    // Update refs
+    prevItems.current = items
+    prevParticipants.current = participants
+    prevAssignments.current = allAssignments
+  }, [items, participants, allAssignments, participantId, isInitialLoad, showToast])
 }

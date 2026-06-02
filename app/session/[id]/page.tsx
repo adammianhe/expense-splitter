@@ -28,8 +28,17 @@ export default function SessionPage({ params }: { params: Promise<{ id: string }
     if (stored) setParticipantId(stored)
     setCheckedStorage(true)
   }, [sessionId])
+const {
+  soloQty,
+  allAssignments,
+  incrementSolo,
+  decrementSolo,
+  createShare,
+  confirmShare,
+  rejectShare,
+  removeShare,
+} = useItemAssignments(sessionId, participantId)
 
-  const { tickedQty, ticked, allAssignments, incrementItem, decrementItem } = useItemAssignments(sessionId, participantId)
   const {
     payments,
     claimPayment,
@@ -64,12 +73,13 @@ if (data) {
 }
 
   // Change notifications
-  useChangeNotifications(
-    data?.items || [],
-    data?.participants || [],
-    showToast,
-    !loading && !!data
-  )
+ useChangeNotifications({
+  participantId,
+  participants: data?.participants || [],
+  items: data?.items || [],
+  allAssignments,
+  isInitialLoad: loading,
+})
 
   if (loading || !checkedStorage) {
     return (
@@ -115,40 +125,48 @@ if (data) {
   participant={currentParticipant}
   bills={bills}
   items={data.items}
- tickedQty={tickedQty}
+  soloQty={soloQty}
   allAssignments={allAssignments}
   summary={summary}
   lockedItemIds={lockedItemIds}
   isItemLocked={editor.isItemLocked}
-          canDeleteParticipant={editor.canDeleteParticipant}
-          onAddItem={editor.addItem}
-          onUpdateItem={editor.updateItem}
-          onDeleteItem={editor.deleteItem}
-          onAddParticipant={editor.addParticipant}
-          onDeleteParticipant={editor.deleteParticipant}
-          onIncrementItem={incrementItem}
-onDecrementItem={decrementItem}
-          onSwitchName={() => {
-            clearParticipantId(sessionId)
-            setParticipantId(null)
-          }}
-          onVerify={verifyPayment}
-          onUnverify={unverifyPayment}
-          onMarkAsCash={markAsCash}
-          onOwnerConfirm={ownerConfirmPayment}
-        />
+  canDeleteParticipant={editor.canDeleteParticipant}
+  onAddItem={editor.addItem}
+  onUpdateItem={editor.updateItem}
+  onDeleteItem={editor.deleteItem}
+  onAddParticipant={editor.addParticipant}
+  onDeleteParticipant={editor.deleteParticipant}
+  onIncrementItem={incrementSolo}
+  onDecrementItem={decrementSolo}
+  onCreateShare={createShare}
+  onConfirmShare={confirmShare}
+  onRejectShare={rejectShare}
+  onRemoveShare={removeShare}
+  onSwitchName={() => {
+    clearParticipantId(sessionId)
+    setParticipantId(null)
+  }}
+  onVerify={verifyPayment}
+  onUnverify={unverifyPayment}
+  onMarkAsCash={markAsCash}
+  onOwnerConfirm={ownerConfirmPayment}
+/>
       ) : (
         <ItemTicker
   session={data.session}
   participant={currentParticipant}
   participants={data.participants}
   items={data.items}
-  tickedQty={tickedQty}
+  soloQty={soloQty}
   allAssignments={allAssignments}
   myPayment={getPayment(currentParticipant.id)}
   lockedItemIds={lockedItemIds}
-  onIncrement={incrementItem}
-  onDecrement={decrementItem}
+  onIncrement={incrementSolo}
+  onDecrement={decrementSolo}
+  onCreateShare={createShare}
+  onConfirmShare={confirmShare}
+  onRejectShare={rejectShare}
+  onRemoveShare={removeShare}
   onSwitchName={() => {
     clearParticipantId(sessionId)
     setParticipantId(null)

@@ -17,6 +17,7 @@ export type ParticipantBill = {
   hasTicked: boolean
   amountPaid: number
   amountOwed: number
+  hasPendingShares: boolean // true if any share involving this person is pending
 }
 
 export function useSessionBills(
@@ -29,47 +30,110 @@ export function useSessionBills(
   return useMemo(() => {
     if (!session) return { bills: [], summary: defaultSummary() }
 
-    // Get total quantity of an item claimed across all non-rejected assignments
-    const getItemTotalClaimed = (itemId: string): number => {
-      return allAssignments
-        .filter((a) => a.item_id === itemId && a.status !== "rejected")
-        .reduce((sum, a) => sum + (Number(a.quantity) || 1), 0)
-    }
+    // Calculate participant's share of an item — from solo + confirmed shares
+    const calculateParticipantItemShare = (
+      itemId: string,
+      participantId: string,
+      itemPrice: number
+    ): number => {
+      let total = 0
 
-    // Get quantity claimed by a specific participant
-    const getParticipantItemQty = (itemId: string, participantId: string): number => {
-      const assignment = allAssignments.find(
+      // Solo claim
+      const soloAssignment = allAssignments.find(
         (a) =>
           a.item_id === itemId &&
           a.participant_id === participantId &&
+          a.share_group_id === null &&
           a.status !== "rejected"
       )
-      return assignment ? Number(assignment.quantity) || 1 : 0
+      if (soloAssignment) {
+        total += Number(soloAssignment.quantity) * itemPrice
+      }
+
+      // Share claims — only confirmed shares count toward bill
+      const myShares = allAssignments.filter(
+        (a) =>
+          a.item_id === itemId &&
+          a.participant_id === participantId &&
+          a.share_group_id !== null
+      )
+
+      for (const myShare of myShares) {
+        // Get all members of this share group (any status)
+        const groupMembers = allAssignments.filter(
+          (a) => a.share_group_id === myShare.share_group_id
+        )
+        // Only fully-confirmed groups contribute to bill
+        const allConfirmed = groupMembers.every((m) => m.status === "confirmed")
+        if (allConfirmed) {
+          const shareQty = Number(myShare.quantity)
+          const memberCount = groupMembers.length
+          total += (shareQty * itemPrice) / memberCount
+        }
+      }
+
+      return total
     }
 
-    // Total session subtotal — sum of (price × claimed quantity) for all items
-    // Capped at item's ordered quantity so over-claiming doesn't inflate the total
+    // Check if participant has any pending shares
+    const hasPendingShares = (participantId: string): boolean => {
+      // Participant is part of a share where someone else still hasn't confirmed
+      const myShareGroupIds = new Set(
+        allAssignments
+          .filter(
+            (a) =>
+              a.participant_id === participantId &&
+              a.share_group_id !== null &&
+              a.status !== "rejected"
+          )
+          .map((a) => a.share_group_id)
+      )
+
+      for (const groupId of myShareGroupIds) {
+        const members = allAssignments.filter((a) => a.share_group_id === groupId)
+        if (members.some((m) => m.status === "pending")) return true
+      }
+      return false
+    }
+
+    // Total session subtotal — sum all confirmed claims (capped at item quantity)
     const totalSessionSubtotal = items.reduce((sum, item) => {
-      const claimed = getItemTotalClaimed(item.id)
-      const effectiveClaimed = Math.min(claimed, item.quantity)
-      return sum + Number(item.price) * effectiveClaimed
+      // Sum solo confirmed quantities
+      const soloTotal = allAssignments
+        .filter(
+          (a) =>
+            a.item_id === item.id &&
+            a.share_group_id === null &&
+            a.status === "confirmed"
+        )
+        .reduce((s, a) => s + Number(a.quantity), 0)
+
+      // Sum share quantities (only fully-confirmed groups)
+      const shareGroupIds = new Set(
+        allAssignments
+          .filter((a) => a.item_id === item.id && a.share_group_id !== null)
+          .map((a) => a.share_group_id)
+      )
+
+      let shareTotal = 0
+      for (const groupId of shareGroupIds) {
+        const members = allAssignments.filter((a) => a.share_group_id === groupId)
+        const allConfirmed = members.every((m) => m.status === "confirmed")
+        if (allConfirmed) {
+          // Each share group represents `quantity` units of the item
+          shareTotal += Number(members[0].quantity)
+        }
+      }
+
+      const totalClaimed = soloTotal + shareTotal
+      const effective = Math.min(totalClaimed, item.quantity)
+      return sum + Number(item.price) * effective
     }, 0)
 
+    // Build bills per participant
     const bills: ParticipantBill[] = participants.map((p) => {
-      // Calculate this person's subtotal
       const subtotal = items.reduce((sum, item) => {
-        const myQty = getParticipantItemQty(item.id, p.id)
-        if (myQty === 0) return sum
-
-        const totalClaimed = getItemTotalClaimed(item.id)
-        // Split: my qty / total claimed qty × (price × min(claimed, ordered))
-        const itemEffective = Math.min(totalClaimed, item.quantity)
-        const myShare =
-          totalClaimed > 0
-            ? (myQty / totalClaimed) * (Number(item.price) * itemEffective)
-            : 0
-
-        return sum + myShare
+        return sum + calculateParticipantItemShare(item.id, p.id, Number(item.price))
       }, 0)
 
       const billCalc = calculateBill(subtotal, totalSessionSubtotal, session)
@@ -82,7 +146,7 @@ export function useSessionBills(
 
       const amountPaid = isVerified && payment ? Number(payment.amount_paid) : 0
       const amountOwed = Math.max(0, total - amountPaid)
-      const hasTicked = subtotal > 0
+      const hasTicked = subtotal > 0 || hasPendingShares(p.id)
 
       return {
         participant: p,
@@ -97,10 +161,11 @@ export function useSessionBills(
         hasTicked,
         amountPaid,
         amountOwed,
+        hasPendingShares: hasPendingShares(p.id),
       }
     })
 
-    // Total bill = sum of all items × their quantity + tax + service
+    // Total restaurant bill (fixed) — items + tax + service
     const itemsSubtotal = items.reduce(
       (sum, item) => sum + Number(item.price) * Number(item.quantity),
       0
@@ -127,18 +192,11 @@ export function useSessionBills(
     let totalPending = 0
 
     bills.forEach((b) => {
-      if (b.isVerified) {
-        totalCollected += b.amountPaid
-      }
-      if (b.isClaimed && b.payment) {
-        totalPending += Number(b.payment.amount_paid)
-      }
+      if (b.isVerified) totalCollected += b.amountPaid
+      if (b.isClaimed && b.payment) totalPending += Number(b.payment.amount_paid)
     })
 
-    const totalOutstanding = Math.max(
-      0,
-      totalBill - totalCollected - totalPending
-    )
+    const totalOutstanding = Math.max(0, totalBill - totalCollected - totalPending)
 
     return {
       bills,
@@ -159,4 +217,4 @@ function defaultSummary() {
     totalPending: 0,
     totalOutstanding: 0,
   }
-}
+}1 

@@ -4,8 +4,8 @@ import { useEffect, useState } from "react"
 import { supabase } from "@/lib/supabase"
 
 export function useItemAssignments(sessionId: string, participantId: string | null) {
-  // Map of item_id → quantity claimed by current user
-  const [tickedQty, setTickedQty] = useState<Map<string, number>>(new Map())
+  // Solo claims map: item_id → quantity (only counts solo rows where share_group_id is null)
+  const [soloQty, setSoloQty] = useState<Map<string, number>>(new Map())
   const [allAssignments, setAllAssignments] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
 
@@ -19,16 +19,17 @@ export function useItemAssignments(sessionId: string, participantId: string | nu
       setAllAssignments(data)
 
       if (participantId) {
-        const myQty = new Map<string, number>()
+        const myMap = new Map<string, number>()
         data.forEach((row: any) => {
           if (
             row.participant_id === participantId &&
+            row.share_group_id === null &&
             row.status !== "rejected"
           ) {
-            myQty.set(row.item_id, Number(row.quantity) || 1)
+            myMap.set(row.item_id, Number(row.quantity) || 1)
           }
         })
-        setTickedQty(myQty)
+        setSoloQty(myMap)
       }
     }
     setLoading(false)
@@ -55,93 +56,198 @@ export function useItemAssignments(sessionId: string, participantId: string | nu
     }
   }, [sessionId, participantId])
 
-  // Set quantity for an item (0 = remove assignment)
-  const setItemQty = async (itemId: string, newQty: number) => {
+  // ============================================
+  // SOLO CLAIMS
+  // ============================================
+
+  const setSoloItemQty = async (itemId: string, newQty: number) => {
     if (!participantId) return
 
-    const currentQty = tickedQty.get(itemId) || 0
+    const currentQty = soloQty.get(itemId) || 0
+    if (newQty === currentQty) return
 
-    if (newQty === currentQty) return // No change
-
-    // Optimistic UI update
-    const newMap = new Map(tickedQty)
-    if (newQty <= 0) {
-      newMap.delete(itemId)
-    } else {
-      newMap.set(itemId, newQty)
-    }
-    setTickedQty(newMap)
+    // Optimistic UI
+    const newMap = new Map(soloQty)
+    if (newQty <= 0) newMap.delete(itemId)
+    else newMap.set(itemId, newQty)
+    setSoloQty(newMap)
 
     if (newQty <= 0) {
-      // Delete assignment
+      // Delete solo assignment (only the solo row, not share rows)
       const { error } = await supabase
         .from("item_assignments")
         .delete()
         .eq("item_id", itemId)
         .eq("participant_id", participantId)
+        .is("share_group_id", null)
 
       if (error) {
         const reverted = new Map(newMap)
         reverted.set(itemId, currentQty)
-        setTickedQty(reverted)
+        setSoloQty(reverted)
         alert("Error: " + error.message)
       }
     } else if (currentQty === 0) {
-      // Create new assignment
+      // Create new solo assignment
       const { error } = await supabase.from("item_assignments").insert({
         item_id: itemId,
         participant_id: participantId,
         assigned_by_participant_id: participantId,
         status: "confirmed",
         quantity: newQty,
+        share_group_id: null,
       })
 
       if (error) {
         const reverted = new Map(newMap)
         reverted.delete(itemId)
-        setTickedQty(reverted)
+        setSoloQty(reverted)
         alert("Error: " + error.message)
       }
     } else {
-      // Update existing assignment
+      // Update existing solo assignment
       const { error } = await supabase
         .from("item_assignments")
         .update({ quantity: newQty })
         .eq("item_id", itemId)
         .eq("participant_id", participantId)
+        .is("share_group_id", null)
 
       if (error) {
         const reverted = new Map(newMap)
         reverted.set(itemId, currentQty)
-        setTickedQty(reverted)
+        setSoloQty(reverted)
         alert("Error: " + error.message)
       }
     }
   }
 
-  // Increment by 1
-  const incrementItem = async (itemId: string) => {
-    const current = tickedQty.get(itemId) || 0
-    await setItemQty(itemId, current + 1)
+  const incrementSolo = async (itemId: string) => {
+    const current = soloQty.get(itemId) || 0
+    await setSoloItemQty(itemId, current + 1)
   }
 
-  // Decrement by 1
-  const decrementItem = async (itemId: string) => {
-    const current = tickedQty.get(itemId) || 0
+  const decrementSolo = async (itemId: string) => {
+    const current = soloQty.get(itemId) || 0
     if (current <= 0) return
-    await setItemQty(itemId, current - 1)
+    await setSoloItemQty(itemId, current - 1)
   }
 
-  // Backwards-compat helpers (for code that still uses Set)
-  const ticked = new Set(tickedQty.keys())
+  // ============================================
+  // SHARE GROUPS
+  // ============================================
+
+  // Create a new share — initiator + tagged people
+  // Initiator is auto-confirmed, others are pending
+  const createShare = async (
+    itemId: string,
+    quantity: number,
+    taggedParticipantIds: string[]
+  ) => {
+    if (!participantId) return
+    if (taggedParticipantIds.length === 0) {
+      throw new Error("Tag at least one person")
+    }
+    if (quantity < 1) {
+      throw new Error("Quantity must be at least 1")
+    }
+
+    // Generate share_group_id client-side using crypto
+    const shareGroupId = crypto.randomUUID()
+
+    // Build rows: initiator (confirmed) + tagged (pending)
+    const rows = [
+      {
+        item_id: itemId,
+        participant_id: participantId,
+        assigned_by_participant_id: participantId,
+        status: "confirmed" as const,
+        quantity,
+        share_group_id: shareGroupId,
+      },
+      ...taggedParticipantIds.map((pid) => ({
+        item_id: itemId,
+        participant_id: pid,
+        assigned_by_participant_id: participantId,
+        status: "pending" as const,
+        quantity,
+        share_group_id: shareGroupId,
+      })),
+    ]
+
+    const { error } = await supabase.from("item_assignments").insert(rows)
+    if (error) throw error
+  }
+
+  // Confirm participation in a share
+  const confirmShare = async (shareGroupId: string) => {
+    if (!participantId) return
+
+    const { error } = await supabase
+      .from("item_assignments")
+      .update({ status: "confirmed" })
+      .eq("share_group_id", shareGroupId)
+      .eq("participant_id", participantId)
+
+    if (error) throw error
+  }
+
+  // Reject participation in a share
+  const rejectShare = async (shareGroupId: string) => {
+    if (!participantId) return
+
+    const { error } = await supabase
+      .from("item_assignments")
+      .update({ status: "rejected" })
+      .eq("share_group_id", shareGroupId)
+      .eq("participant_id", participantId)
+
+    if (error) throw error
+  }
+
+  // Remove an entire share group (only initiator can do this)
+  const removeShare = async (shareGroupId: string) => {
+    const { error } = await supabase
+      .from("item_assignments")
+      .delete()
+      .eq("share_group_id", shareGroupId)
+
+    if (error) throw error
+  }
+
+  // Re-tag someone in an existing share (replace a rejected member)
+  // For now, simplest: just delete the rejected row, add a new pending row
+  const addShareMember = async (shareGroupId: string, newParticipantId: string) => {
+    if (!participantId) return
+
+    // Get the share's item and quantity
+    const existing = allAssignments.find(
+      (a) => a.share_group_id === shareGroupId && a.participant_id === participantId
+    )
+    if (!existing) throw new Error("Share not found")
+
+    const { error } = await supabase.from("item_assignments").insert({
+      item_id: existing.item_id,
+      participant_id: newParticipantId,
+      assigned_by_participant_id: participantId,
+      status: "pending",
+      quantity: existing.quantity,
+      share_group_id: shareGroupId,
+    })
+
+    if (error) throw error
+  }
 
   return {
-    tickedQty,
-    ticked,
+    soloQty,
     allAssignments,
     loading,
-    setItemQty,
-    incrementItem,
-    decrementItem,
+    incrementSolo,
+    decrementSolo,
+    createShare,
+    confirmShare,
+    rejectShare,
+    removeShare,
+    addShareMember,
   }
 }
