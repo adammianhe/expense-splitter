@@ -59,15 +59,59 @@ const {
 
   const editor = useSessionEditor(sessionId, payments, reload)
 
-  // Items locked from new tickers (only NON-OWNER payments lock)
+// Items locked from new tickers
+// Lock only if: (a) non-owner paid AND (b) item is fully claimed (no room left)
 const lockedItemIds = new Set<string>()
 if (data) {
   const ownerIds = new Set(
     data.participants.filter((p) => p.is_owner).map((p) => p.id)
   )
+
+  // Build map of item_id → total claimed quantity (solo + confirmed shares)
+  const claimedPerItem = new Map<string, number>()
+  data.items.forEach((item) => {
+    let solo = 0
+    let shareTotal = 0
+
+    // Solo confirmed
+    allAssignments
+      .filter(
+        (a) =>
+          a.item_id === item.id &&
+          a.share_group_id === null &&
+          a.status === "confirmed"
+      )
+      .forEach((a) => {
+        solo += Number(a.quantity) || 0
+      })
+
+    // Fully-confirmed shares
+    const shareGroupIds = new Set(
+      allAssignments
+        .filter((a) => a.item_id === item.id && a.share_group_id !== null)
+        .map((a) => a.share_group_id)
+    )
+    shareGroupIds.forEach((groupId) => {
+      const members = allAssignments.filter((a) => a.share_group_id === groupId)
+      const allConfirmed = members.every((m) => m.status === "confirmed")
+      if (allConfirmed) shareTotal += Number(members[0].quantity) || 0
+    })
+
+    claimedPerItem.set(item.id, solo + shareTotal)
+  })
+
+  // Now check each non-owner payment
   payments.forEach((p) => {
     if (!ownerIds.has(p.participant_id)) {
-      ;(p.paid_item_ids || []).forEach((id) => lockedItemIds.add(id))
+      ;(p.paid_item_ids || []).forEach((id) => {
+        const item = data.items.find((i) => i.id === id)
+        if (!item) return
+        const totalClaimed = claimedPerItem.get(id) || 0
+        // Lock only if fully claimed (no room for new tickers)
+        if (totalClaimed >= item.quantity) {
+          lockedItemIds.add(id)
+        }
+      })
     }
   })
 }
