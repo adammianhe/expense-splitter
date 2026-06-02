@@ -16,6 +16,7 @@ import ToastContainer from "@/components/ui/ToastContainer"
 import { useReceipts } from "@/hooks/useReceipts"
 import ReceiptManager from "./_components/ReceiptManager"
 import AppHeader from "@/components/AppHeader"
+import { Skeleton, SkeletonCard, SkeletonItemRow } from "@/components/ui/Skeleton"
 
 export default function SessionPage({ params }: { params: Promise<{ id: string }> }) {
   const { id: sessionId } = use(params)
@@ -130,12 +131,32 @@ if (data) {
 })
 
   if (loading || !checkedStorage) {
-    return (
-      <main className="min-h-screen flex items-center justify-center">
-        <div className="text-gray-500">Loading...</div>
+  return (
+    <>
+      <AppHeader />
+      <main className="min-h-screen bg-gray-50 p-6">
+        <div className="max-w-md mx-auto space-y-6">
+          {/* Header skeleton */}
+          <div className="space-y-2">
+            <Skeleton className="h-3 w-32" />
+            <Skeleton className="h-7 w-2/3" />
+            <Skeleton className="h-3 w-40" />
+          </div>
+
+          {/* Share button skeleton */}
+          <Skeleton className="h-10 w-full rounded-lg" />
+
+          {/* Card skeletons */}
+          <SkeletonCard />
+          <SkeletonCard />
+          <SkeletonItemRow />
+          <SkeletonItemRow />
+          <SkeletonItemRow />
+        </div>
       </main>
-    )
-  }
+    </>
+  )
+}
 
   if (error || !data) {
     return (
