@@ -1,0 +1,161 @@
+"use client"
+
+import { useEffect, useState, use } from "react"
+import { useSession } from "@/hooks/useSession"
+import { useItemAssignments } from "@/hooks/useItemAssignments"
+import { usePayments } from "@/hooks/usePayments"
+import { useSessionBills } from "@/hooks/useSessionBills"
+import { useSessionEditor } from "@/hooks/useSessionEditor"
+import { useToast } from "@/hooks/useToast"
+import { useChangeNotifications } from "@/hooks/useChangeNotifications"
+import { getParticipantId, clearParticipantId } from "@/lib/utils"
+import NamePicker from "./_components/NamePicker"
+import ItemTicker from "./_components/ItemTicker"
+import OwnerDashboard from "./_components/OwnerDashboard"
+import ToastContainer from "@/components/ui/ToastContainer"
+
+export default function SessionPage({ params }: { params: Promise<{ id: string }> }) {
+  const { id: sessionId } = use(params)
+  const { data, loading, error, reload } = useSession(sessionId)
+  const [participantId, setParticipantId] = useState<string | null>(null)
+  const [checkedStorage, setCheckedStorage] = useState(false)
+
+  // Toast system
+  const { toasts, showToast, dismissToast } = useToast()
+
+  useEffect(() => {
+    const stored = getParticipantId(sessionId)
+    if (stored) setParticipantId(stored)
+    setCheckedStorage(true)
+  }, [sessionId])
+
+  const { ticked, allAssignments, toggleItem } = useItemAssignments(sessionId, participantId)
+  const {
+    payments,
+    claimPayment,
+    getPayment,
+    verifyPayment,
+    unverifyPayment,
+    markAsCash,
+    ownerConfirmPayment,
+  } = usePayments(sessionId)
+
+  const { bills, summary } = useSessionBills(
+    data?.session || null,
+    data?.participants || [],
+    data?.items || [],
+    allAssignments,
+    payments
+  )
+
+  const editor = useSessionEditor(sessionId, payments, reload)
+
+  // Items locked from new tickers (only NON-OWNER payments lock)
+const lockedItemIds = new Set<string>()
+if (data) {
+  const ownerIds = new Set(
+    data.participants.filter((p) => p.is_owner).map((p) => p.id)
+  )
+  payments.forEach((p) => {
+    if (!ownerIds.has(p.participant_id)) {
+      ;(p.paid_item_ids || []).forEach((id) => lockedItemIds.add(id))
+    }
+  })
+}
+
+  // Change notifications
+  useChangeNotifications(
+    data?.items || [],
+    data?.participants || [],
+    showToast,
+    !loading && !!data
+  )
+
+  if (loading || !checkedStorage) {
+    return (
+      <main className="min-h-screen flex items-center justify-center">
+        <div className="text-gray-500">Loading...</div>
+      </main>
+    )
+  }
+
+  if (error || !data) {
+    return (
+      <main className="min-h-screen flex items-center justify-center p-6">
+        <div className="text-center">
+          <p className="text-red-500 font-medium">Session tak jumpa</p>
+          <p className="text-gray-500 text-sm mt-2">{error}</p>
+        </div>
+      </main>
+    )
+  }
+
+  const currentParticipant = participantId
+    ? data.participants.find((p) => p.id === participantId)
+    : null
+
+  // If saved participant got deleted by owner, clear localStorage
+  if (participantId && !currentParticipant) {
+    clearParticipantId(sessionId)
+  }
+
+  return (
+    <>
+      <ToastContainer toasts={toasts} onDismiss={dismissToast} />
+
+      {!currentParticipant ? (
+        <NamePicker
+          sessionId={sessionId}
+          participants={data.participants}
+          onPicked={setParticipantId}
+        />
+      ) : currentParticipant.is_owner ? (
+        <OwnerDashboard
+  session={data.session}
+  participant={currentParticipant}
+  bills={bills}
+  items={data.items}
+  ticked={ticked}
+  allAssignments={allAssignments}
+  summary={summary}
+  lockedItemIds={lockedItemIds}
+  isItemLocked={editor.isItemLocked}
+          canDeleteParticipant={editor.canDeleteParticipant}
+          onAddItem={editor.addItem}
+          onUpdateItem={editor.updateItem}
+          onDeleteItem={editor.deleteItem}
+          onAddParticipant={editor.addParticipant}
+          onDeleteParticipant={editor.deleteParticipant}
+          onToggleItem={toggleItem}
+          onSwitchName={() => {
+            clearParticipantId(sessionId)
+            setParticipantId(null)
+          }}
+          onVerify={verifyPayment}
+          onUnverify={unverifyPayment}
+          onMarkAsCash={markAsCash}
+          onOwnerConfirm={ownerConfirmPayment}
+        />
+      ) : (
+        <ItemTicker
+  session={data.session}
+  participant={currentParticipant}
+  participants={data.participants}
+  items={data.items}
+  ticked={ticked}
+  allAssignments={allAssignments}
+  myPayment={getPayment(currentParticipant.id)}
+  lockedItemIds={lockedItemIds}
+  onToggle={toggleItem}
+          onSwitchName={() => {
+            clearParticipantId(sessionId)
+            setParticipantId(null)
+          }}
+          onClaimPayment={(amount, method, paidItemIds) =>
+            claimPayment(currentParticipant.id, amount, method, paidItemIds)
+          }
+        />
+      )}
+    </>
+  )
+}
