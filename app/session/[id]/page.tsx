@@ -18,9 +18,6 @@ import ReceiptManager from "./_components/ReceiptManager"
 import AppHeader from "@/components/AppHeader"
 import { Skeleton, SkeletonCard, SkeletonItemRow } from "@/components/ui/Skeleton"
 
-useEffect(() => {
-  window.scrollTo(0, 0)
-}, [])
 
 export default function SessionPage({ params }: { params: Promise<{ id: string }> }) {
   const { id: sessionId } = use(params)
@@ -28,6 +25,11 @@ export default function SessionPage({ params }: { params: Promise<{ id: string }
   const { receipts, uploadReceipt, deleteReceipt } = useReceipts(sessionId)
   const [participantId, setParticipantId] = useState<string | null>(null)
   const [checkedStorage, setCheckedStorage] = useState(false)
+
+  // Scroll to top when navigating to this page
+  useEffect(() => {
+    window.scrollTo(0, 0)
+  }, [])
 
   // Toast system
   const { toasts, showToast, dismissToast } = useToast()
