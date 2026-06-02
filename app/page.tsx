@@ -7,7 +7,7 @@ export default function HomePage() {
   return (
     <>
     <AppHeader />
-    <main className="min-h-screen flex flex-col items-center justify-center p-6 bg-gray-50">
+    <main className="h-[calc(100dvh-60px)] flex flex-col items-center justify-center p-6 overflow-hidden">
       <div className="max-w-md w-full text-center space-y-6">
         <h1 className="text-4xl font-bold text-gray-900">
           Split Bill, No Drama
