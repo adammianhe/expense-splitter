@@ -14,9 +14,9 @@ export type ParticipantBill = {
   isClaimed: boolean
   isVerified: boolean
   isUnverified: boolean
-  hasTicked: boolean // whether they have any items at all
-  amountPaid: number // only counts if verified
-  amountOwed: number // remaining unpaid
+  hasTicked: boolean
+  amountPaid: number
+  amountOwed: number
 }
 
 export function useSessionBills(
@@ -29,24 +29,47 @@ export function useSessionBills(
   return useMemo(() => {
     if (!session) return { bills: [], summary: defaultSummary() }
 
-    const getItemSharers = (itemId: string): string[] => {
+    // Get total quantity of an item claimed across all non-rejected assignments
+    const getItemTotalClaimed = (itemId: string): number => {
       return allAssignments
         .filter((a) => a.item_id === itemId && a.status !== "rejected")
-        .map((a) => a.participant_id)
+        .reduce((sum, a) => sum + (Number(a.quantity) || 1), 0)
     }
 
+    // Get quantity claimed by a specific participant
+    const getParticipantItemQty = (itemId: string, participantId: string): number => {
+      const assignment = allAssignments.find(
+        (a) =>
+          a.item_id === itemId &&
+          a.participant_id === participantId &&
+          a.status !== "rejected"
+      )
+      return assignment ? Number(assignment.quantity) || 1 : 0
+    }
+
+    // Total session subtotal — sum of (price × claimed quantity) for all items
+    // Capped at item's ordered quantity so over-claiming doesn't inflate the total
     const totalSessionSubtotal = items.reduce((sum, item) => {
-      const sharers = getItemSharers(item.id)
-      if (sharers.length === 0) return sum
-      return sum + Number(item.price)
+      const claimed = getItemTotalClaimed(item.id)
+      const effectiveClaimed = Math.min(claimed, item.quantity)
+      return sum + Number(item.price) * effectiveClaimed
     }, 0)
 
     const bills: ParticipantBill[] = participants.map((p) => {
       // Calculate this person's subtotal
       const subtotal = items.reduce((sum, item) => {
-        const sharers = getItemSharers(item.id)
-        if (!sharers.includes(p.id)) return sum
-        return sum + Number(item.price) / sharers.length
+        const myQty = getParticipantItemQty(item.id, p.id)
+        if (myQty === 0) return sum
+
+        const totalClaimed = getItemTotalClaimed(item.id)
+        // Split: my qty / total claimed qty × (price × min(claimed, ordered))
+        const itemEffective = Math.min(totalClaimed, item.quantity)
+        const myShare =
+          totalClaimed > 0
+            ? (myQty / totalClaimed) * (Number(item.price) * itemEffective)
+            : 0
+
+        return sum + myShare
       }, 0)
 
       const billCalc = calculateBill(subtotal, totalSessionSubtotal, session)
@@ -57,13 +80,8 @@ export function useSessionBills(
       const isVerified = payment?.status === "verified"
       const isUnverified = payment?.status === "unverified"
 
-      // Only verified payments count toward amount paid
       const amountPaid = isVerified && payment ? Number(payment.amount_paid) : 0
-
-      // Amount owed = full bill minus what's actually paid (verified)
       const amountOwed = Math.max(0, total - amountPaid)
-
-      // Has the person ticked anything?
       const hasTicked = subtotal > 0
 
       return {
@@ -82,9 +100,9 @@ export function useSessionBills(
       }
     })
 
-// Total bill = sum of all items + tax + service on the full bill
+    // Total bill = sum of all items × their quantity + tax + service
     const itemsSubtotal = items.reduce(
-      (sum, item) => sum + Number(item.price),
+      (sum, item) => sum + Number(item.price) * Number(item.quantity),
       0
     )
 
@@ -105,7 +123,6 @@ export function useSessionBills(
 
     const totalBill = itemsSubtotal + billTax + billService
 
-    // Calculate collected and pending from payments
     let totalCollected = 0
     let totalPending = 0
 
@@ -118,7 +135,6 @@ export function useSessionBills(
       }
     })
 
-    // Outstanding = what's still owed
     const totalOutstanding = Math.max(
       0,
       totalBill - totalCollected - totalPending

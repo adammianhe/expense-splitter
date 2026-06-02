@@ -14,36 +14,39 @@ export function useSessionEditor(
   }
 
   // Add new item
-  const addItem = async (name: string, price: number) => {
-    if (!name.trim()) throw new Error("Item name required")
-    if (price < 0) throw new Error("Price cannot be negative")
+const addItem = async (name: string, price: number, quantity: number = 1) => {
+  if (!name.trim()) throw new Error("Item name required")
+  if (price < 0) throw new Error("Price cannot be negative")
+  if (quantity < 1) throw new Error("Quantity must be at least 1")
 
-    const { error } = await supabase.from("items").insert({
-      session_id: sessionId,
-      name: name.trim(),
-      price,
-    })
+  const { error } = await supabase.from("items").insert({
+    session_id: sessionId,
+    name: name.trim(),
+    price,
+    quantity,
+  })
 
-    if (error) throw error
-    await onChangeReload()
-  }
+  if (error) throw error
+  await onChangeReload()
+}
 
   // Update item
-  const updateItem = async (itemId: string, name: string, price: number) => {
-    if (isItemLocked(itemId)) {
-      throw new Error("Cannot edit — item already paid by someone")
-    }
-    if (!name.trim()) throw new Error("Item name required")
-    if (price < 0) throw new Error("Price cannot be negative")
-
-    const { error } = await supabase
-      .from("items")
-      .update({ name: name.trim(), price })
-      .eq("id", itemId)
-
-    if (error) throw error
-    await onChangeReload()
+  const updateItem = async (itemId: string, name: string, price: number, quantity: number = 1) => {
+  if (isItemLocked(itemId)) {
+    throw new Error("Cannot edit — item already paid by someone")
   }
+  if (!name.trim()) throw new Error("Item name required")
+  if (price < 0) throw new Error("Price cannot be negative")
+  if (quantity < 1) throw new Error("Quantity must be at least 1")
+
+  const { error } = await supabase
+    .from("items")
+    .update({ name: name.trim(), price, quantity })
+    .eq("id", itemId)
+
+  if (error) throw error
+  await onChangeReload()
+}
 
   // Delete item
   const deleteItem = async (itemId: string) => {

@@ -4,13 +4,12 @@ import { useEffect, useState } from "react"
 import { supabase } from "@/lib/supabase"
 
 export function useItemAssignments(sessionId: string, participantId: string | null) {
-  const [ticked, setTicked] = useState<Set<string>>(new Set())
+  // Map of item_id → quantity claimed by current user
+  const [tickedQty, setTickedQty] = useState<Map<string, number>>(new Map())
   const [allAssignments, setAllAssignments] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
 
-  // Load all assignments for this session (so we can show shared dishes later)
   const loadAssignments = async () => {
-    // Get all assignments for items in this session
     const { data, error } = await supabase
       .from("item_assignments")
       .select("*, items!inner(session_id)")
@@ -19,15 +18,17 @@ export function useItemAssignments(sessionId: string, participantId: string | nu
     if (!error && data) {
       setAllAssignments(data)
 
-      // Filter for current user
       if (participantId) {
-        const myTicked = data
-          .filter(
-            (row: any) =>
-              row.participant_id === participantId && row.status !== "rejected"
-          )
-          .map((row: any) => row.item_id)
-        setTicked(new Set(myTicked))
+        const myQty = new Map<string, number>()
+        data.forEach((row: any) => {
+          if (
+            row.participant_id === participantId &&
+            row.status !== "rejected"
+          ) {
+            myQty.set(row.item_id, Number(row.quantity) || 1)
+          }
+        })
+        setTickedQty(myQty)
       }
     }
     setLoading(false)
@@ -36,7 +37,6 @@ export function useItemAssignments(sessionId: string, participantId: string | nu
   useEffect(() => {
     loadAssignments()
 
-    // Real-time subscription for assignments
     const channel = supabase
       .channel(`assignments-${sessionId}`)
       .on(
@@ -55,22 +55,25 @@ export function useItemAssignments(sessionId: string, participantId: string | nu
     }
   }, [sessionId, participantId])
 
-  // Toggle an item (add or remove)
-  const toggleItem = async (itemId: string) => {
+  // Set quantity for an item (0 = remove assignment)
+  const setItemQty = async (itemId: string, newQty: number) => {
     if (!participantId) return
 
-    const isCurrentlyTicked = ticked.has(itemId)
+    const currentQty = tickedQty.get(itemId) || 0
+
+    if (newQty === currentQty) return // No change
 
     // Optimistic UI update
-    const newTicked = new Set(ticked)
-    if (isCurrentlyTicked) {
-      newTicked.delete(itemId)
+    const newMap = new Map(tickedQty)
+    if (newQty <= 0) {
+      newMap.delete(itemId)
     } else {
-      newTicked.add(itemId)
+      newMap.set(itemId, newQty)
     }
-    setTicked(newTicked)
+    setTickedQty(newMap)
 
-    if (isCurrentlyTicked) {
+    if (newQty <= 0) {
+      // Delete assignment
       const { error } = await supabase
         .from("item_assignments")
         .delete()
@@ -78,27 +81,67 @@ export function useItemAssignments(sessionId: string, participantId: string | nu
         .eq("participant_id", participantId)
 
       if (error) {
-        const reverted = new Set(newTicked)
-        reverted.add(itemId)
-        setTicked(reverted)
+        const reverted = new Map(newMap)
+        reverted.set(itemId, currentQty)
+        setTickedQty(reverted)
         alert("Error: " + error.message)
       }
-    } else {
+    } else if (currentQty === 0) {
+      // Create new assignment
       const { error } = await supabase.from("item_assignments").insert({
         item_id: itemId,
         participant_id: participantId,
         assigned_by_participant_id: participantId,
         status: "confirmed",
+        quantity: newQty,
       })
 
       if (error) {
-        const reverted = new Set(newTicked)
+        const reverted = new Map(newMap)
         reverted.delete(itemId)
-        setTicked(reverted)
+        setTickedQty(reverted)
+        alert("Error: " + error.message)
+      }
+    } else {
+      // Update existing assignment
+      const { error } = await supabase
+        .from("item_assignments")
+        .update({ quantity: newQty })
+        .eq("item_id", itemId)
+        .eq("participant_id", participantId)
+
+      if (error) {
+        const reverted = new Map(newMap)
+        reverted.set(itemId, currentQty)
+        setTickedQty(reverted)
         alert("Error: " + error.message)
       }
     }
   }
 
-  return { ticked, allAssignments, loading, toggleItem }
+  // Increment by 1
+  const incrementItem = async (itemId: string) => {
+    const current = tickedQty.get(itemId) || 0
+    await setItemQty(itemId, current + 1)
+  }
+
+  // Decrement by 1
+  const decrementItem = async (itemId: string) => {
+    const current = tickedQty.get(itemId) || 0
+    if (current <= 0) return
+    await setItemQty(itemId, current - 1)
+  }
+
+  // Backwards-compat helpers (for code that still uses Set)
+  const ticked = new Set(tickedQty.keys())
+
+  return {
+    tickedQty,
+    ticked,
+    allAssignments,
+    loading,
+    setItemQty,
+    incrementItem,
+    decrementItem,
+  }
 }

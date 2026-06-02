@@ -29,7 +29,7 @@ export default function SessionPage({ params }: { params: Promise<{ id: string }
     setCheckedStorage(true)
   }, [sessionId])
 
-  const { ticked, allAssignments, toggleItem } = useItemAssignments(sessionId, participantId)
+  const { tickedQty, ticked, allAssignments, incrementItem, decrementItem } = useItemAssignments(sessionId, participantId)
   const {
     payments,
     claimPayment,
@@ -115,7 +115,7 @@ if (data) {
   participant={currentParticipant}
   bills={bills}
   items={data.items}
-  ticked={ticked}
+ tickedQty={tickedQty}
   allAssignments={allAssignments}
   summary={summary}
   lockedItemIds={lockedItemIds}
@@ -126,7 +126,8 @@ if (data) {
           onDeleteItem={editor.deleteItem}
           onAddParticipant={editor.addParticipant}
           onDeleteParticipant={editor.deleteParticipant}
-          onToggleItem={toggleItem}
+          onIncrementItem={incrementItem}
+onDecrementItem={decrementItem}
           onSwitchName={() => {
             clearParticipantId(sessionId)
             setParticipantId(null)
@@ -142,19 +143,20 @@ if (data) {
   participant={currentParticipant}
   participants={data.participants}
   items={data.items}
-  ticked={ticked}
+  tickedQty={tickedQty}
   allAssignments={allAssignments}
   myPayment={getPayment(currentParticipant.id)}
   lockedItemIds={lockedItemIds}
-  onToggle={toggleItem}
-          onSwitchName={() => {
-            clearParticipantId(sessionId)
-            setParticipantId(null)
-          }}
-          onClaimPayment={(amount, method, paidItemIds) =>
-            claimPayment(currentParticipant.id, amount, method, paidItemIds)
-          }
-        />
+  onIncrement={incrementItem}
+  onDecrement={decrementItem}
+  onSwitchName={() => {
+    clearParticipantId(sessionId)
+    setParticipantId(null)
+  }}
+  onClaimPayment={(amount, method, paidItemIds) =>
+    claimPayment(currentParticipant.id, amount, method, paidItemIds)
+  }
+/>
       )}
     </>
   )

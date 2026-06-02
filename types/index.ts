@@ -1,7 +1,9 @@
 // Item type — a dish on the bill (form data)
 export type ItemForm = {
   name: string
-  price: string  // string because <input> returns string
+  price: string
+  quantity: string
+  priceMode: 'each' | 'total'
 }
 
 // Participant type — a person eating (form data)
@@ -46,6 +48,7 @@ export type Item = {
   session_id: string
   name: string
   price: number
+  quantity: number
   created_at: string
   updated_at: string
 }
@@ -56,6 +59,7 @@ export type ItemAssignment = {
   participant_id: string
   assigned_by_participant_id: string | null
   status: 'pending' | 'confirmed' | 'rejected'
+  quantity: number
   created_at: string
   updated_at: string
 }

@@ -12,7 +12,7 @@ type Props = {
   participant: Participant
   bills: ParticipantBill[]
   items: Item[]
-  ticked: Set<string>
+  tickedQty: Map<string, number>
   allAssignments: any[]
   summary: {
     totalBill: number
@@ -23,13 +23,13 @@ type Props = {
   lockedItemIds: Set<string>
   isItemLocked: (itemId: string) => boolean
   canDeleteParticipant: (participantId: string, allAssignments: any[]) => boolean
-  onAddItem: (name: string, price: number) => Promise<void>
-  onUpdateItem: (itemId: string, name: string, price: number) => Promise<void>
+  onAddItem: (name: string, price: number, quantity: number) => Promise<void>
+  onUpdateItem: (itemId: string, name: string, price: number, quantity: number) => Promise<void>
   onDeleteItem: (itemId: string) => Promise<void>
   onAddParticipant: (name: string) => Promise<void>
   onDeleteParticipant: (participantId: string) => Promise<void>
-  // Existing functions
-  onToggleItem: (itemId: string) => void
+  onIncrementItem: (itemId: string) => void
+  onDecrementItem: (itemId: string) => void
   onSwitchName: () => void
   onVerify: (paymentId: string) => Promise<void>
   onUnverify: (paymentId: string) => Promise<void>
@@ -42,7 +42,7 @@ export default function OwnerDashboard({
   participant,
   bills,
   items,
-  ticked,
+  tickedQty,
   allAssignments,
   summary,
   lockedItemIds,
@@ -53,7 +53,8 @@ export default function OwnerDashboard({
   onDeleteItem,
   onAddParticipant,
   onDeleteParticipant,
-  onToggleItem,
+  onIncrementItem,
+  onDecrementItem,
   onSwitchName,
   onVerify,
   onUnverify,
@@ -66,48 +67,69 @@ export default function OwnerDashboard({
   const [addingParticipant, setAddingParticipant] = useState(false)
   const [newParticipantName, setNewParticipantName] = useState("")
   const [processingParticipant, setProcessingParticipant] = useState(false)
-  const [editSnapshot, setEditSnapshot] = useState<Set<string> | null>(null)
+  const [editSnapshot, setEditSnapshot] = useState<Map<string, number> | null>(null)
   const [editMode, setEditMode] = useState(false)
 
-  // Owner's bill calculation
+  // Owner's bill
   const myBill = bills.find((b) => b.participant.id === participant.id)
   const myPayment = myBill?.payment
   const confirmedItemIds = new Set(myPayment?.paid_item_ids || [])
-  const previewItemIds = Array.from(ticked).filter(
-    (id) => !confirmedItemIds.has(id)
-  )
-  const removedConfirmedIds = Array.from(confirmedItemIds).filter(
-    (id) => !ticked.has(id)
-  )
-  const hasUnconfirmedChanges =
-    previewItemIds.length > 0 || removedConfirmedIds.length > 0
 
-  const getItemSharers = (itemId: string): string[] => {
+  // Detect unconfirmed changes by comparing tickedQty vs confirmed
+  const myQty = (itemId: string): number => tickedQty.get(itemId) || 0
+  const hasUnconfirmedChanges = items.some((item) => {
+    const mine = myQty(item.id)
+    const wasConfirmed = confirmedItemIds.has(item.id)
+    if (mine > 0 && !wasConfirmed) return true
+    if (mine === 0 && wasConfirmed) return true
+    return false
+  })
+
+  const getTotalClaimed = (itemId: string): number => {
     return allAssignments
       .filter((a) => a.item_id === itemId && a.status !== "rejected")
+      .reduce((sum, a) => sum + (Number(a.quantity) || 1), 0)
+  }
+
+  const getOtherSharers = (itemId: string): Participant[] => {
+    const ids = allAssignments
+      .filter(
+        (a) =>
+          a.item_id === itemId &&
+          a.status !== "rejected" &&
+          a.participant_id !== participant.id
+      )
       .map((a) => a.participant_id)
+    return bills.filter((b) => ids.includes(b.participant.id)).map((b) => b.participant)
   }
 
-  const getItemSharerNames = (itemId: string): string[] => {
-  const sharerIds = getItemSharers(itemId)
-  return bills
-    .filter((b) => sharerIds.includes(b.participant.id))
-    .map((b) => b.participant.name)
-}
-
-  const getMyShare = (item: Item): number => {
-    const sharers = getItemSharers(item.id)
-    if (!sharers.includes(participant.id)) return 0
-    return Number(item.price) / sharers.length
+  const calculateMyItemShare = (item: Item): number => {
+    const mine = myQty(item.id)
+    if (mine === 0) return 0
+    const totalClaimed = getTotalClaimed(item.id)
+    const effective = Math.min(totalClaimed, item.quantity)
+    return totalClaimed > 0 ? (mine / totalClaimed) * (Number(item.price) * effective) : 0
   }
 
-const totalSessionSubtotal = items.reduce((sum, item) => {
-    const sharers = getItemSharers(item.id)
-    if (sharers.length === 0) return sum
-    return sum + Number(item.price)
+  // Total session subtotal
+  const totalSessionSubtotal = items.reduce((sum, item) => {
+    const claimed = getTotalClaimed(item.id)
+    const effective = Math.min(claimed, item.quantity)
+    return sum + Number(item.price) * effective
   }, 0)
 
-  // Map each item ID to names of people who paid for it
+  const previewSubtotal = items.reduce(
+    (sum, item) => sum + calculateMyItemShare(item),
+    0
+  )
+
+  const previewBillCalc = calculateBill(previewSubtotal, totalSessionSubtotal, session)
+  const previewTotal = roundToTwoDecimals(previewBillCalc.total)
+
+  const hasTax = session.tax_type && Number(session.tax_value) > 0
+  const hasService = session.service_type && Number(session.service_value) > 0
+
+  // Payer names per item
   const payerNames: Record<string, string[]> = {}
   items.forEach((item) => {
     const payers = bills
@@ -119,117 +141,127 @@ const totalSessionSubtotal = items.reduce((sum, item) => {
     payerNames[item.id] = payers
   })
 
-  const previewSubtotal = items
-    .filter((item) => ticked.has(item.id))
-    .reduce((sum, item) => sum + getMyShare(item), 0)
-
-  const previewBillCalc = calculateBill(
-    previewSubtotal,
-    totalSessionSubtotal,
-    session
-  )
-  
-  const previewTotal = roundToTwoDecimals(previewBillCalc.total)
-
-  const hasTax = session.tax_type && Number(session.tax_value) > 0
-  const hasService = session.service_type && Number(session.service_value) > 0
-
-  // Owner confirm handler
+  // Confirm handler — checks for empty state
   const handleConfirm = async () => {
-  // Special case: if confirming results in empty items
-  if (ticked.size === 0 && myPayment) {
-    const confirmed = confirm(
-      "Untick everything? Your confirmation will be removed."
-    )
-    if (!confirmed) return
+    const totalQty = Array.from(tickedQty.values()).reduce((a, b) => a + b, 0)
+    if (totalQty === 0 && myPayment) {
+      const confirmed = confirm("Untick everything? Your confirmation will be removed.")
+      if (!confirmed) return
+    }
+
+    setConfirming(true)
+    try {
+      const tickedIds = items.filter((i) => myQty(i.id) > 0).map((i) => i.id)
+      await onOwnerConfirm(participant.id, previewTotal, tickedIds)
+      setEditMode(false)
+      setEditSnapshot(null)
+    } catch (err: any) {
+      alert("Error: " + err.message)
+    } finally {
+      setConfirming(false)
+    }
   }
 
-  setConfirming(true)
-  try {
-    const tickedIds = Array.from(ticked)
-    await onOwnerConfirm(participant.id, previewTotal, tickedIds)
+  const handleEnterEditMode = () => {
+    setEditSnapshot(new Map(tickedQty))
+    setEditMode(true)
+  }
+
+  const handleCancelEdit = () => {
+    if (!editSnapshot) {
+      setEditMode(false)
+      return
+    }
+    // Revert each item to its snapshot quantity
+    const allItemIds = new Set([...tickedQty.keys(), ...editSnapshot.keys()])
+    allItemIds.forEach((itemId) => {
+      const currentQty = tickedQty.get(itemId) || 0
+      const snapshotQty = editSnapshot.get(itemId) || 0
+      const diff = snapshotQty - currentQty
+      if (diff > 0) {
+        for (let i = 0; i < diff; i++) onIncrementItem(itemId)
+      } else if (diff < 0) {
+        for (let i = 0; i < Math.abs(diff); i++) onDecrementItem(itemId)
+      }
+    })
     setEditMode(false)
     setEditSnapshot(null)
-  } catch (err: any) {
-    alert("Error: " + err.message)
-  } finally {
-    setConfirming(false)
-  }
-}
-
-const handleEnterEditMode = () => {
-  // Save snapshot of current ticked state
-  setEditSnapshot(new Set(ticked))
-  setEditMode(true)
-}
-
-const handleCancelEdit = () => {
-  if (!editSnapshot) {
-    setEditMode(false)
-    return
   }
 
-  // Revert ticks to snapshot
-  const currentlyTicked = new Set(ticked)
-  const snapshotTicked = editSnapshot
+  const handleItemClick = (itemId: string, action: "inc" | "dec") => {
+    const isLockedByNonOwner = lockedItemIds.has(itemId)
+    const isInOwnerConfirmed = confirmedItemIds.has(itemId)
 
-  // Items in current but not in snapshot → untick
-  currentlyTicked.forEach((id) => {
-    if (!snapshotTicked.has(id)) onToggleItem(id)
-  })
+    if (isLockedByNonOwner && !isInOwnerConfirmed) return
+    if (isLockedByNonOwner && isInOwnerConfirmed && action === "dec") return
+    if (myPayment && !editMode) return
 
-  // Items in snapshot but not in current → re-tick
-  snapshotTicked.forEach((id) => {
-    if (!currentlyTicked.has(id)) onToggleItem(id)
-  })
+    if (action === "inc") onIncrementItem(itemId)
+    else onDecrementItem(itemId)
+  }
 
-  setEditMode(false)
-  setEditSnapshot(null)
-}
-
-const handleItemClick = (itemId: string) => {
-  // Determine if this click is allowed
-  const isCurrentlyTicked = ticked.has(itemId)
-  const isLockedByNonOwner = lockedItemIds.has(itemId)
-  const isInOwnerConfirmed = confirmedItemIds.has(itemId)
-
-  // Trying to tick something locked by non-owner → block
-  if (!isCurrentlyTicked && isLockedByNonOwner) return
-
-  // Trying to untick something locked by non-owner (even if owner confirmed it first) → block
-  if (isCurrentlyTicked && isLockedByNonOwner && !isInOwnerConfirmed) return
-  if (isCurrentlyTicked && isLockedByNonOwner && isInOwnerConfirmed) return
-
-  // In State 2 (locked, no edit mode) → block all interaction
-  if (myPayment && !editMode) return
-
-  onToggleItem(itemId)
-}
-
-  // Action handlers
-  const handleShare = () => {
+  const handleShare = async () => {
     const url = window.location.href
-    navigator.clipboard.writeText(url)
-    setCopied(true)
-    setTimeout(() => setCopied(false), 2000)
+    try {
+      if (navigator.clipboard && window.isSecureContext) {
+        await navigator.clipboard.writeText(url)
+        setCopied(true)
+        setTimeout(() => setCopied(false), 2000)
+        return
+      }
+    } catch (e) {}
+    const textarea = document.createElement("textarea")
+    textarea.value = url
+    textarea.style.position = "fixed"
+    textarea.style.opacity = "0"
+    document.body.appendChild(textarea)
+    textarea.select()
+    try {
+      document.execCommand("copy")
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    } catch (e) {
+      alert(`Copy this link:\n\n${url}`)
+    } finally {
+      document.body.removeChild(textarea)
+    }
   }
 
-  const handleNudge = (participantName: string, amount: number) => {
+  const handleNudge = async (participantName: string, amount: number) => {
     const url = window.location.href
     const message = `Hey ${participantName}, please pay for the meal 👀 RM ${amount.toFixed(2)} — ${url}`
-    navigator.clipboard.writeText(message)
-    alert("Message copied! Paste it in WhatsApp.")
+    try {
+      if (navigator.clipboard && window.isSecureContext) {
+        await navigator.clipboard.writeText(message)
+        alert("Message copied! Paste it in WhatsApp.")
+        return
+      }
+    } catch (e) {}
+    const textarea = document.createElement("textarea")
+    textarea.value = message
+    textarea.style.position = "fixed"
+    textarea.style.opacity = "0"
+    document.body.appendChild(textarea)
+    textarea.select()
+    try {
+      document.execCommand("copy")
+      alert("Message copied! Paste it in WhatsApp.")
+    } catch (e) {
+      alert(`Copy this message:\n\n${message}`)
+    } finally {
+      document.body.removeChild(textarea)
+    }
   }
 
   const handleMarkAsCash = async (bill: ParticipantBill) => {
     if (!confirm(`Mark ${bill.participant.name} as paid cash RM ${bill.total.toFixed(2)}?`)) return
-
     setProcessingId(bill.participant.id)
     try {
-      const paidItemIds = items
-        .filter((item) => getItemSharers(item.id).includes(bill.participant.id))
-        .map((item) => item.id)
-
+      const paidItemIds = allAssignments
+        .filter(
+          (a) => a.participant_id === bill.participant.id && a.status !== "rejected"
+        )
+        .map((a) => a.item_id)
       await onMarkAsCash(bill.participant.id, bill.total, paidItemIds)
     } catch (err: any) {
       alert("Error: " + err.message)
@@ -261,7 +293,6 @@ const handleItemClick = (itemId: string) => {
     }
   }
 
-  // Participant handlers
   const handleAddParticipant = async () => {
     if (!newParticipantName.trim()) return
     setProcessingParticipant(true)
@@ -288,46 +319,36 @@ const handleItemClick = (itemId: string) => {
     }
   }
 
-  // Status badge
   const getStatusBadge = (bill: ParticipantBill) => {
-  // OWNER
-  if (bill.participant.is_owner) {
+    if (bill.participant.is_owner) {
+      if (!bill.hasTicked) {
+        return { text: "Owner — no items ticked", color: "bg-purple-100 text-purple-800" }
+      }
+      if (bill.isVerified) {
+        return { text: "✅ Owner — confirmed", color: "bg-purple-100 text-purple-800" }
+      }
+      return { text: "🤔 Owner — not confirmed yet", color: "bg-orange-100 text-orange-800" }
+    }
     if (!bill.hasTicked) {
-      return { text: "Owner — no items ticked", color: "bg-purple-100 text-purple-800" }
+      return { text: "🤔 Hasn't ticked yet", color: "bg-gray-100 text-gray-600" }
     }
-    if (bill.isVerified) {
-      return { text: "✅ Owner — confirmed", color: "bg-purple-100 text-purple-800" }
+    if (!bill.payment) {
+      return { text: "💸 Ticked, not paid yet", color: "bg-orange-100 text-orange-800" }
     }
-    return { text: "🤔 Owner — not confirmed yet", color: "bg-orange-100 text-orange-800" }
+    if (bill.isVerified && bill.amountOwed === 0) {
+      return { text: "✅ Paid in full", color: "bg-green-100 text-green-800" }
+    }
+    if (bill.isVerified && bill.amountOwed > 0) {
+      return { text: "💰 Partially paid", color: "bg-blue-100 text-blue-800" }
+    }
+    if (bill.isClaimed) {
+      return { text: "⏳ Pending verification", color: "bg-yellow-100 text-yellow-800" }
+    }
+    if (bill.isUnverified) {
+      return { text: "❌ Payment unverified", color: "bg-red-100 text-red-800" }
+    }
+    return { text: "👻 Not paid yet", color: "bg-gray-100 text-gray-600" }
   }
-
-  // FRIEND
-  // Not ticked anything (could be either not joined OR joined but no ticks)
-  if (!bill.hasTicked) {
-    return { text: "🤔 Hasn't ticked yet", color: "bg-gray-100 text-gray-600" }
-  }
-
-  // Has ticks but no payment record at all
-  if (!bill.payment) {
-    return { text: "💸 Ticked, not paid yet", color: "bg-orange-100 text-orange-800" }
-  }
-
-  // Payment exists — check its status
-  if (bill.isVerified && bill.amountOwed === 0) {
-    return { text: "✅ Paid in full", color: "bg-green-100 text-green-800" }
-  }
-  if (bill.isVerified && bill.amountOwed > 0) {
-    return { text: "💰 Partially paid", color: "bg-blue-100 text-blue-800" }
-  }
-  if (bill.isClaimed) {
-    return { text: "⏳ Pending verification", color: "bg-yellow-100 text-yellow-800" }
-  }
-  if (bill.isUnverified) {
-    return { text: "❌ Payment unverified", color: "bg-red-100 text-red-800" }
-  }
-
-  return { text: "👻 Not paid yet", color: "bg-gray-100 text-gray-600" }
-}
 
   return (
     <main className="min-h-screen bg-gray-50 p-6 pb-32">
@@ -347,92 +368,123 @@ const handleItemClick = (itemId: string) => {
         </div>
 
         {/* SHARE LINK */}
-        <Button
-          variant="secondary"
-          onClick={handleShare}
-          className="w-full text-sm"
-        >
+        <Button variant="secondary" onClick={handleShare} className="w-full text-sm">
           {copied ? "✓ Link copied!" : "📋 Share Link to Friends"}
         </Button>
 
-        {/* YOUR BILL SECTION */}
+        {/* YOUR BILL */}
         <div className="bg-white border border-gray-200 rounded-xl p-4 space-y-4">
           <div>
-  <div className="text-xs text-gray-500 font-medium uppercase">
-    Your Bill ({participant.name})
-  </div>
-  <div className="text-xs text-gray-400 mt-1">
-    {!myPayment
-      ? "Tick what you ate, then confirm"
-      : editMode
-      ? "Make changes — Save or Cancel below"
-      : "Click 'Edit' below to make changes"}
-  </div>
-</div>
+            <div className="text-xs text-gray-500 font-medium uppercase">
+              Your Bill ({participant.name})
+            </div>
+            <div className="text-xs text-gray-400 mt-1">
+              {!myPayment
+                ? "How many did you have?"
+                : editMode
+                ? "Make changes — Save or Cancel below"
+                : "Click 'Edit' below to make changes"}
+            </div>
+          </div>
 
           <div className="space-y-2">
-  {items.map((item) => {
-    const isTicked = ticked.has(item.id)
-    const isConfirmed = confirmedItemIds.has(item.id)
-    const sharers = getItemSharers(item.id)
-    const isShared = sharers.length > 1
-    const myShare = isTicked ? getMyShare(item) : 0
+            {items.map((item) => {
+              const mine = myQty(item.id)
+              const isConfirmed = confirmedItemIds.has(item.id)
+              const totalClaimed = getTotalClaimed(item.id)
+              const remaining = Math.max(0, item.quantity - totalClaimed)
+              const lockedByOthers = lockedItemIds.has(item.id) && !isConfirmed
+              const inLockedMode = myPayment && !editMode
+              const interactionDisabled = lockedByOthers || inLockedMode
 
-    // Locked if non-owner paid for this item (and owner didn't tick it yet)
-    const lockedByOthers = lockedItemIds.has(item.id) && !isConfirmed
+              const myShare = calculateMyItemShare(item)
+              const otherSharers = getOtherSharers(item.id)
 
-    // Determine disabled state based on current mode
-    const inLockedMode = myPayment && !editMode
-    const interactionDisabled = lockedByOthers || inLockedMode
+              const canIncrement = !interactionDisabled && totalClaimed < item.quantity
+              const canDecrement = !interactionDisabled && mine > 0
+              const isTicked = mine > 0
 
-    return (
-      <button
-        key={item.id}
-        onClick={() => handleItemClick(item.id)}
-        disabled={!!interactionDisabled}
-        className={`w-full p-3 rounded-lg border text-left transition ${
-          isTicked
-            ? "bg-black text-white border-black"
-            : "bg-gray-50 border-gray-200 hover:bg-gray-100"
-        } ${interactionDisabled ? "opacity-60 cursor-not-allowed" : ""}`}
-      >
-        <div className="flex items-center justify-between">
-          <span className="font-medium text-sm">{item.name}</span>
-          <span className="font-semibold text-sm">
-            RM {Number(item.price).toFixed(2)}
-          </span>
-        </div>
+              return (
+                <div
+                  key={item.id}
+                  className={`p-3 rounded-lg border transition ${
+                    isTicked
+                      ? "bg-black text-white border-black"
+                      : "bg-gray-50 border-gray-200"
+                  } ${interactionDisabled ? "opacity-60" : ""}`}
+                >
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="flex-1 min-w-0">
+                      <div className="font-medium text-sm">
+                        {item.name}
+                        {item.quantity > 1 && (
+                          <span className={`ml-1 text-xs ${isTicked ? "text-gray-300" : "text-gray-500"}`}>
+                            (qty: {item.quantity})
+                          </span>
+                        )}
+                      </div>
+                      <div className={`text-xs mt-0.5 ${isTicked ? "text-gray-300" : "text-gray-500"}`}>
+                        RM {Number(item.price).toFixed(2)} each
+                      </div>
+                    </div>
 
-        {sharers.length > 0 && (
-          <div className={`text-xs mt-1 ${isTicked ? "text-gray-300" : "text-gray-500"}`}>
-            {isShared ? (
-              <>
-                Shared by {getItemSharerNames(item.id).join(", ")}
-                {isTicked && ` — your share: RM ${myShare.toFixed(2)}`}
-              </>
-            ) : sharers.includes(participant.id) ? (
-              "Just you"
-            ) : (
-              `Only ${getItemSharerNames(item.id)[0]}`
-            )}
+                    <div className="flex items-center gap-2 flex-shrink-0">
+                      <button
+                        onClick={() => handleItemClick(item.id, "dec")}
+                        disabled={!canDecrement}
+                        className={`w-7 h-7 rounded-full font-bold text-base flex items-center justify-center transition ${
+                          isTicked
+                            ? "bg-white/20 text-white disabled:opacity-30"
+                            : "bg-gray-200 text-gray-700 disabled:opacity-30"
+                        }`}
+                      >
+                        −
+                      </button>
+                      <span className="font-bold text-base w-5 text-center">{mine}</span>
+                      <button
+                        onClick={() => handleItemClick(item.id, "inc")}
+                        disabled={!canIncrement}
+                        className={`w-7 h-7 rounded-full font-bold text-base flex items-center justify-center transition ${
+                          isTicked
+                            ? "bg-white/20 text-white disabled:opacity-30"
+                            : "bg-gray-200 text-gray-700 disabled:opacity-30"
+                        }`}
+                      >
+                        +
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className={`text-xs mt-2 ${isTicked ? "text-gray-300" : "text-gray-500"}`}>
+                    {mine > 0 && <span>Your share: RM {myShare.toFixed(2)}</span>}
+                    {otherSharers.length > 0 && (
+                      <span>
+                        {mine > 0 ? " • " : ""}
+                        Shared with {otherSharers.map((s) => s.name).join(", ")}
+                      </span>
+                    )}
+                    {item.quantity > 1 && remaining > 0 && (
+                      <span className={mine > 0 || otherSharers.length > 0 ? " • " : ""}>
+                        {remaining} left
+                      </span>
+                    )}
+                  </div>
+
+                  {isConfirmed && (
+                    <div className={`text-xs mt-1 font-medium ${isTicked ? "text-green-300" : "text-green-600"}`}>
+                      ✓ Confirmed
+                    </div>
+                  )}
+
+                  {lockedByOthers && (
+                    <div className="text-xs mt-1 text-gray-400 font-medium">
+                      🔒 Paid by someone else
+                    </div>
+                  )}
+                </div>
+              )
+            })}
           </div>
-        )}
-
-        {isConfirmed && (
-          <div className={`text-xs mt-1 font-medium ${isTicked ? "text-green-300" : "text-green-600"}`}>
-            ✓ Confirmed
-          </div>
-        )}
-
-        {lockedByOthers && (
-          <div className="text-xs mt-1 text-gray-400 font-medium">
-            🔒 Paid by someone else
-          </div>
-        )}
-      </button>
-    )
-  })}
-</div>
 
           {previewSubtotal > 0 && (
             <div className="border-t border-gray-100 pt-3 space-y-2">
@@ -465,66 +517,66 @@ const handleItemClick = (itemId: string) => {
                 </span>
               </div>
 
-              {/* State 1: Fresh — Confirm button */}
-{!myPayment && hasUnconfirmedChanges && (
-  <Button
-    variant="primary"
-    onClick={handleConfirm}
-    disabled={confirming}
-    className="w-full mt-3 py-3"
-  >
-    {confirming ? "Saving..." : `Confirm My Items — RM ${previewTotal.toFixed(2)}`}
-  </Button>
-)}
+              {/* State 1: Fresh — Confirm */}
+              {!myPayment && hasUnconfirmedChanges && (
+                <Button
+                  variant="primary"
+                  onClick={handleConfirm}
+                  disabled={confirming}
+                  className="w-full mt-3 py-3"
+                >
+                  {confirming ? "Saving..." : `Confirm My Items — RM ${previewTotal.toFixed(2)}`}
+                </Button>
+              )}
 
-{/* State 2: Locked — Edit button */}
-{myPayment && !editMode && (
-  <div className="space-y-2 mt-3">
-    <div className="bg-green-50 border border-green-200 rounded-lg p-2 text-xs text-green-800 text-center">
-      ✓ Confirmed — RM {Number(myPayment.amount_paid).toFixed(2)}
-    </div>
-    <Button
-      variant="secondary"
-      onClick={handleEnterEditMode}
-      className="w-full text-sm"
-    >
-      📝 Edit My Items
-    </Button>
-  </div>
-)}
+              {/* State 2: Locked — Edit */}
+              {myPayment && !editMode && (
+                <div className="space-y-2 mt-3">
+                  <div className="bg-green-50 border border-green-200 rounded-lg p-2 text-xs text-green-800 text-center">
+                    ✓ Confirmed — RM {Number(myPayment.amount_paid).toFixed(2)}
+                  </div>
+                  <Button
+                    variant="secondary"
+                    onClick={handleEnterEditMode}
+                    className="w-full text-sm"
+                  >
+                    📝 Edit My Items
+                  </Button>
+                </div>
+              )}
 
-{/* State 3: Editing — Save + Cancel */}
-{myPayment && editMode && (
-  <div className="space-y-2 mt-3">
-    {hasUnconfirmedChanges ? (
-      <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-2 text-xs text-yellow-800 text-center">
-        ⚠️ Unsaved changes
-      </div>
-    ) : (
-      <div className="bg-blue-50 border border-blue-200 rounded-lg p-2 text-xs text-blue-800 text-center">
-        Edit mode — make changes or cancel
-      </div>
-    )}
-    <div className="flex gap-2">
-      <Button
-        variant="secondary"
-        onClick={handleCancelEdit}
-        disabled={confirming}
-        className="flex-1 text-sm"
-      >
-        Cancel
-      </Button>
-      <Button
-        variant="primary"
-        onClick={handleConfirm}
-        disabled={confirming || !hasUnconfirmedChanges}
-        className="flex-1 text-sm"
-      >
-        {confirming ? "Saving..." : "Save Changes"}
-      </Button>
-    </div>
-  </div>
-)}
+              {/* State 3: Editing */}
+              {myPayment && editMode && (
+                <div className="space-y-2 mt-3">
+                  {hasUnconfirmedChanges ? (
+                    <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-2 text-xs text-yellow-800 text-center">
+                      ⚠️ Unsaved changes
+                    </div>
+                  ) : (
+                    <div className="bg-blue-50 border border-blue-200 rounded-lg p-2 text-xs text-blue-800 text-center">
+                      Edit mode — make changes or cancel
+                    </div>
+                  )}
+                  <div className="flex gap-2">
+                    <Button
+                      variant="secondary"
+                      onClick={handleCancelEdit}
+                      disabled={confirming}
+                      className="flex-1 text-sm"
+                    >
+                      Cancel
+                    </Button>
+                    <Button
+                      variant="primary"
+                      onClick={handleConfirm}
+                      disabled={confirming || !hasUnconfirmedChanges}
+                      className="flex-1 text-sm"
+                    >
+                      {confirming ? "Saving..." : "Save Changes"}
+                    </Button>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
@@ -542,22 +594,21 @@ const handleItemClick = (itemId: string) => {
 
         {/* ITEMS EDITOR */}
         <ItemsEditor
-  items={items}
-  participants={bills.map((b) => b.participant)}
-  allAssignments={allAssignments}
-  payerNames={payerNames}
-  isItemLocked={isItemLocked}
-  onAddItem={onAddItem}
-  onUpdateItem={onUpdateItem}
-  onDeleteItem={onDeleteItem}
-/>
+          items={items}
+          participants={bills.map((b) => b.participant)}
+          allAssignments={allAssignments}
+          payerNames={payerNames}
+          isItemLocked={isItemLocked}
+          onAddItem={onAddItem}
+          onUpdateItem={onUpdateItem}
+          onDeleteItem={onDeleteItem}
+        />
 
         {/* COLLECTION SUMMARY */}
         <div className="bg-white border border-gray-200 rounded-xl p-4 space-y-3">
           <div className="text-xs text-gray-500 font-medium uppercase">
             Collection Summary
           </div>
-
           <div className="space-y-2">
             <div className="flex justify-between text-sm">
               <span className="text-gray-600">Total bill</span>
@@ -586,7 +637,7 @@ const handleItemClick = (itemId: string) => {
           </div>
         </div>
 
-        {/* PARTICIPANTS LIST */}
+        {/* PARTICIPANTS */}
         <div>
           <div className="flex items-center justify-between mb-2">
             <h2 className="text-sm font-medium text-gray-700">
@@ -603,7 +654,6 @@ const handleItemClick = (itemId: string) => {
             )}
           </div>
 
-          {/* Add participant inline */}
           {addingParticipant && (
             <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 mb-3 space-y-2">
               <input
@@ -612,7 +662,7 @@ const handleItemClick = (itemId: string) => {
                 onChange={(e) => setNewParticipantName(e.target.value)}
                 placeholder="New participant name"
                 autoFocus
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:border-black"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:border-black text-gray-900 bg-white"
               />
               <div className="flex gap-2">
                 <Button

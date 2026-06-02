@@ -15,7 +15,9 @@ export function useCreateSession() {
   const router = useRouter()
   const [loading, setLoading] = useState(false)
   const [sessionName, setSessionName] = useState("")
-  const [items, setItems] = useState<ItemForm[]>([{ name: "", price: "" }])
+  const [items, setItems] = useState<ItemForm[]>([
+  { name: "", price: "", quantity: "1", priceMode: "each" }
+])
   const [participants, setParticipants] = useState<ParticipantForm[]>([{ name: "" }])
   const [qrFile, setQrFile] = useState<File | null>(null)
 
@@ -33,7 +35,8 @@ export function useCreateSession() {
 
   const validate = (): string | null => {
     if (!sessionName.trim()) return "Please enter a session name"
-    if (items.some((i) => !i.name.trim() || !i.price)) return "Please fill in all item details"
+    if (items.some((i) => !i.name.trim() || !i.price || !i.quantity)) return "Please fill in all items"
+if (items.some((i) => parseInt(i.quantity) < 1)) return "Quantity must be at least 1"
     if (participants.some((p) => !p.name.trim())) return "Please fill in all participant names"
     if (participants.length < 1) return "Please add at least one participant"
     if (tax.enabled && !tax.value) return "Please enter a tax value"
@@ -123,12 +126,19 @@ if (owner) {
   }
 }
 
-      // 4. Create items
-      const itemRows = items.map((item) => ({
-        session_id: session.id,
-        name: item.name.trim(),
-        price: parseFloat(item.price),
-      }))
+      // 4. Create items — convert to per-item price if mode is "total"
+const itemRows = items.map((item) => {
+  const qty = parseInt(item.quantity) || 1
+  const inputPrice = parseFloat(item.price)
+  const pricePerItem = item.priceMode === "total" ? inputPrice / qty : inputPrice
+
+  return {
+    session_id: session.id,
+    name: item.name.trim(),
+    price: Math.round(pricePerItem * 100) / 100,
+    quantity: qty,
+  }
+})
 
       const { error: itemsError } = await supabase.from("items").insert(itemRows)
 
