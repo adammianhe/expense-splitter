@@ -10,7 +10,7 @@
 |---|---|
 | **Live Demo** | https://expense-splitter-three-blush.vercel.app/ |
 | **GitHub** | https://github.com/adammianhe/expense-splitter |
-| **Demo Video** | [YOUTUBE_LINK_PLACEHOLDER] |
+| **Demo Video** | https://youtu.be/O1PTi6wmoHk |
 | **Challenge** | Shortcut Asia Internship Challenge 2026 |
 | **Submission Date** | 2 June 2026 |
 
