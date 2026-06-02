@@ -75,6 +75,7 @@ if (items.some((i) => parseInt(i.quantity) < 1)) return "Quantity must be at lea
     }
 
     setLoading(true)
+    const startTime = Date.now()
 
     try {
       // 1. Create session
@@ -177,6 +178,11 @@ if (receiptFiles.length > 0) {
       if (itemsError) throw itemsError
 
       // 5. Redirect
+      // BEFORE redirecting, ensure minimum 500ms loading time
+    const elapsed = Date.now() - startTime
+    if (elapsed < 500) {
+      await new Promise((resolve) => setTimeout(resolve, 500 - elapsed))
+    }
       router.push(`/session/${session.id}`)
     } catch (error: any) {
       alert("Error: " + error.message)

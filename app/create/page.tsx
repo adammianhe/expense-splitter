@@ -62,7 +62,7 @@ export default function CreateSessionPage() {
 >
   {loading ? (
     <span className="flex items-center justify-center gap-2">
-      <Spinner size={18} />
+      <Spinner size={20} />
       Creating...
     </span>
   ) : (

@@ -18,6 +18,10 @@ import ReceiptManager from "./_components/ReceiptManager"
 import AppHeader from "@/components/AppHeader"
 import { Skeleton, SkeletonCard, SkeletonItemRow } from "@/components/ui/Skeleton"
 
+useEffect(() => {
+  window.scrollTo(0, 0)
+}, [])
+
 export default function SessionPage({ params }: { params: Promise<{ id: string }> }) {
   const { id: sessionId } = use(params)
   const { data, loading, error, reload } = useSession(sessionId)
