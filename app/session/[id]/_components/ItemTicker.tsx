@@ -6,8 +6,10 @@ import { calculateBill, roundToTwoDecimals } from "@/lib/utils"
 import Button from "@/components/ui/Button"
 import PaymentModal from "./PaymentModal"
 import SharePickerModal from "./SharePickerModal"
+import ReceiptManager from "./ReceiptManager"
 
 type Props = {
+  receipts: import("@/types").Receipt[]
   session: Session
   participant: Participant
   participants: Participant[]
@@ -49,6 +51,7 @@ export default function ItemTicker({
   onRemoveShare,
   onSwitchName,
   onClaimPayment,
+  receipts,
 }: Props) {
   const [showPayment, setShowPayment] = useState(false)
   const [shareItem, setShareItem] = useState<Item | null>(null)
@@ -311,10 +314,17 @@ export default function ItemTicker({
         </div>
 
         {badge && (
+          
           <div className={`rounded-xl p-3 text-sm font-medium ${badge.color}`}>
             {badge.text}
           </div>
         )}
+        <ReceiptManager
+  receipts={receipts}
+  canManage={false}
+  onUpload={async () => {}}
+  onDelete={async () => {}}
+/>
 
         {/* Items */}
         <div>

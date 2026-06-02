@@ -7,8 +7,12 @@ import { calculateBill, roundToTwoDecimals, formatRelativeDate } from "@/lib/uti
 import Button from "@/components/ui/Button"
 import ItemsEditor from "./ItemsEditor"
 import SharePickerModal from "./SharePickerModal"
+import ReceiptManager from "./ReceiptManager"
 
 type Props = {
+  receipts: import("@/types").Receipt[]
+onUploadReceipt: (file: File) => Promise<void>
+onDeleteReceipt: (receipt: import("@/types").Receipt) => Promise<void>
   session: Session
   participant: Participant
   bills: ParticipantBill[]
@@ -55,6 +59,9 @@ type Props = {
 }
 
 export default function OwnerDashboard({
+  receipts,
+  onUploadReceipt,
+  onDeleteReceipt,
   session,
   participant,
   bills,
@@ -528,6 +535,12 @@ export default function OwnerDashboard({
         <Button variant="secondary" onClick={handleShare} className="w-full text-sm">
           {copied ? "✓ Link copied!" : "📋 Share Link to Friends"}
         </Button>
+        <ReceiptManager
+  receipts={receipts}
+  canManage={true}
+  onUpload={onUploadReceipt}
+  onDelete={onDeleteReceipt}
+/>
 
         {/* YOUR BILL */}
         <div className="bg-white border border-gray-200 rounded-xl p-4 space-y-4">

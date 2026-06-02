@@ -167,16 +167,10 @@ if (data) {
     onPicked={setParticipantId}
   />
 ) : currentParticipant.is_owner ? (
-  <>
-    <div className="max-w-md mx-auto px-6 pt-6">
-      <ReceiptManager
-        receipts={receipts}
-        canManage={true}
-        onUpload={(file: File) => uploadReceipt(file, currentParticipant.id).then(() => {})}
-        onDelete={deleteReceipt}
-      />
-    </div>
-    <OwnerDashboard
+  <OwnerDashboard
+  receipts={receipts}
+onUploadReceipt={(file: File) => uploadReceipt(file, currentParticipant.id).then(() => {})}
+onDeleteReceipt={deleteReceipt}
       session={data.session}
       participant={currentParticipant}
       bills={bills}
@@ -211,18 +205,10 @@ if (data) {
         ownerConfirmPayment(participantId, amount, paidItemIds, paidItemQuantities, paidShareGroupIds)
       }
     />
-  </>
+  
 ) : (
-  <>
-    <div className="max-w-md mx-auto px-6 pt-6">
-      <ReceiptManager
-        receipts={receipts}
-        canManage={false}
-        onUpload={async () => {}}
-        onDelete={async () => {}}
-      />
-    </div>
-    <ItemTicker
+  <ItemTicker
+  receipts={receipts}
       session={data.session}
       participant={currentParticipant}
       participants={data.participants}
@@ -252,7 +238,7 @@ if (data) {
         )
       }
     />
-  </>
+  
 )}
     </>
   )

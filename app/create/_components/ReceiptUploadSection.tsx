@@ -69,14 +69,13 @@ export default function ReceiptUploadSection({ files, onChange }: Props) {
       </p>
 
       <input
-        ref={inputRef}
-        type="file"
-        accept="image/*"
-        multiple
-        capture="environment"
-        onChange={handleAdd}
-        className="hidden"
-      />
+  ref={inputRef}
+  type="file"
+  accept="image/*"
+  multiple
+  onChange={handleAdd}
+  className="hidden"
+/>
     </div>
   )
 }

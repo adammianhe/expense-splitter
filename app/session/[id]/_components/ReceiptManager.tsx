@@ -117,13 +117,12 @@ export default function ReceiptManager({
         )}
 
         <input
-          ref={fileInputRef}
-          type="file"
-          accept="image/*"
-          capture="environment"
-          onChange={handleFileSelect}
-          className="hidden"
-        />
+  ref={fileInputRef}
+  type="file"
+  accept="image/*"
+  onChange={handleFileSelect}
+  className="hidden"
+/>
       </div>
 
       {/* Lightbox */}
