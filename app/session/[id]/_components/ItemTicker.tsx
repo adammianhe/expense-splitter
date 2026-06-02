@@ -291,31 +291,39 @@ export default function ItemTicker({
 
                     {/* Solo quantity controls */}
                     <div className="flex items-center gap-2 flex-shrink-0">
-                      <button
-                        onClick={() => onDecrement(item.id)}
-                        disabled={isDisabled || mine <= 0}
-                        className={`w-8 h-8 rounded-full font-bold text-lg flex items-center justify-center transition ${
-                          isTicked
-                            ? "bg-white/20 text-white disabled:opacity-30"
-                            : "bg-gray-100 text-gray-700 disabled:opacity-30"
-                        }`}
-                      >
-                        −
-                      </button>
-                      <span className="font-bold text-lg w-6 text-center">
-                        {mine}
-                      </span>
-                      <button
-                        onClick={() => onIncrement(item.id)}
-                        disabled={isDisabled}
-                        className={`w-8 h-8 rounded-full font-bold text-lg flex items-center justify-center transition ${
-                          isTicked
-                            ? "bg-white/20 text-white disabled:opacity-30"
-                            : "bg-gray-100 text-gray-700 disabled:opacity-30"
-                        }`}
-                      >
-                        +
-                      </button>
+                      {(() => {
+  const isFullyClaimed = totalClaimed >= item.quantity
+  const canDecrement = mine > 0 && !isPaidItem && !itemsLocked
+  const canIncrement = !isDisabled && !isFullyClaimed
+
+  return (
+    <>
+      <button
+        onClick={() => onDecrement(item.id)}
+        disabled={!canDecrement}
+        className={`w-8 h-8 rounded-full font-bold text-lg flex items-center justify-center transition ${
+          isTicked
+            ? "bg-white/20 text-white disabled:opacity-30"
+            : "bg-gray-100 text-gray-700 disabled:opacity-30"
+        }`}
+      >
+        −
+      </button>
+      <span className="font-bold text-lg w-6 text-center">{mine}</span>
+      <button
+        onClick={() => onIncrement(item.id)}
+        disabled={!canIncrement}
+        className={`w-8 h-8 rounded-full font-bold text-lg flex items-center justify-center transition ${
+          isTicked
+            ? "bg-white/20 text-white disabled:opacity-30"
+            : "bg-gray-100 text-gray-700 disabled:opacity-30"
+        }`}
+      >
+        +
+      </button>
+    </>
+  )
+})()}
                     </div>
                   </div>
 

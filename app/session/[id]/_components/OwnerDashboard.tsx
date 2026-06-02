@@ -248,17 +248,58 @@ export default function OwnerDashboard({
     setEditSnapshot(null)
   }
 
-  const handleItemAction = (itemId: string, action: "inc" | "dec") => {
-    const isLockedByNonOwner = lockedItemIds.has(itemId)
-    const isInOwnerConfirmed = confirmedItemIds.has(itemId)
+ const handleItemAction = (itemId: string, action: "inc" | "dec") => {
+  const isLockedByNonOwner = lockedItemIds.has(itemId)
+  const isInOwnerConfirmed = confirmedItemIds.has(itemId)
+  const item = items.find((i) => i.id === itemId)
+  if (!item) return
 
+  // Calculate total claimed for this item
+  let totalClaimed = 0
+  allAssignments
+    .filter(
+      (a) =>
+        a.item_id === itemId &&
+        a.share_group_id === null &&
+        a.status === "confirmed"
+    )
+    .forEach((a) => (totalClaimed += Number(a.quantity)))
+
+  const shareGroupIds = new Set(
+    allAssignments
+      .filter((a) => a.item_id === itemId && a.share_group_id !== null)
+      .map((a) => a.share_group_id)
+  )
+  shareGroupIds.forEach((groupId) => {
+    const members = allAssignments.filter((a) => a.share_group_id === groupId)
+    if (members.every((m) => m.status === "confirmed")) {
+      totalClaimed += Number(members[0].quantity)
+    }
+  })
+
+  // Increment rules
+  if (action === "inc") {
     if (isLockedByNonOwner && !isInOwnerConfirmed) return
-    if (isLockedByNonOwner && isInOwnerConfirmed && action === "dec") return
-    if (myPayment && !editMode) return
-
-    if (action === "inc") onIncrementItem(itemId)
-    else onDecrementItem(itemId)
+    if (totalClaimed >= item.quantity) return // No room left
+    if (myPayment && !editMode && !isInOwnerConfirmed) return
+    onIncrementItem(itemId)
+    return
   }
+
+  // Decrement rules
+  if (action === "dec") {
+    // Always allow decrement if owner is reducing own unpaid claim
+    if (!isInOwnerConfirmed) {
+      onDecrementItem(itemId)
+      return
+    }
+    // If confirmed, only allow in edit mode AND not locked by others
+    if (isInOwnerConfirmed && editMode && !isLockedByNonOwner) {
+      onDecrementItem(itemId)
+      return
+    }
+  }
+}
 
   const handleCreateShare = async (quantity: number, taggedIds: string[]) => {
     if (!shareItem) return
@@ -508,29 +549,45 @@ export default function OwnerDashboard({
                     </div>
 
                     <div className="flex items-center gap-2 flex-shrink-0">
-                      <button
-                        onClick={() => handleItemAction(item.id, "dec")}
-                        disabled={interactionDisabled || mine <= 0}
-                        className={`w-7 h-7 rounded-full font-bold text-base flex items-center justify-center transition ${
-                          isTicked
-                            ? "bg-white/20 text-white disabled:opacity-30"
-                            : "bg-gray-200 text-gray-700 disabled:opacity-30"
-                        }`}
-                      >
-                        −
-                      </button>
-                      <span className="font-bold text-base w-5 text-center">{mine}</span>
-                      <button
-                        onClick={() => handleItemAction(item.id, "inc")}
-                        disabled={interactionDisabled}
-                        className={`w-7 h-7 rounded-full font-bold text-base flex items-center justify-center transition ${
-                          isTicked
-                            ? "bg-white/20 text-white disabled:opacity-30"
-                            : "bg-gray-200 text-gray-700 disabled:opacity-30"
-                        }`}
-                      >
-                        +
-                      </button>
+                      {/* Owner can always decrement their own UNPAID claims */}
+{/* Owner can increment only if there's room left (totalClaimed < item.quantity) */}
+{(() => {
+  const ownerPaidThisItem = confirmedItemIds.has(item.id)
+  // Decrement: allowed if owner has claimed AND owner hasn't paid for it yet (or in edit mode)
+  const canDecrement =
+    mine > 0 && (!ownerPaidThisItem || editMode) && !lockedByOthers
+  // Increment: blocked if locked from others OR fully claimed OR in locked mode
+  const isFullyClaimed = totalClaimed >= item.quantity
+  const canIncrement = !lockedByOthers && !inLockedMode && !isFullyClaimed
+
+  return (
+    <>
+      <button
+        onClick={() => handleItemAction(item.id, "dec")}
+        disabled={!canDecrement}
+        className={`w-7 h-7 rounded-full font-bold text-base flex items-center justify-center transition ${
+          isTicked
+            ? "bg-white/20 text-white disabled:opacity-30"
+            : "bg-gray-200 text-gray-700 disabled:opacity-30"
+        }`}
+      >
+        −
+      </button>
+      <span className="font-bold text-base w-5 text-center">{mine}</span>
+      <button
+        onClick={() => handleItemAction(item.id, "inc")}
+        disabled={!canIncrement}
+        className={`w-7 h-7 rounded-full font-bold text-base flex items-center justify-center transition ${
+          isTicked
+            ? "bg-white/20 text-white disabled:opacity-30"
+            : "bg-gray-200 text-gray-700 disabled:opacity-30"
+        }`}
+      >
+        +
+      </button>
+    </>
+  )
+})()}
                     </div>
                   </div>
 
