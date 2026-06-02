@@ -501,7 +501,10 @@ export default function OwnerDashboard({
               const isConfirmed = confirmedItemIds.has(item.id)
               const totalClaimed = getTotalClaimed(item.id)
               const remaining = item.quantity - totalClaimed
-              const lockedByOthers = lockedItemIds.has(item.id) && !isConfirmed
+              // Locked by others only if I haven't already claimed it (unconfirmed)
+// If I ticked it BEFORE confirming, I should still be able to untick
+const lockedByOthers =
+  lockedItemIds.has(item.id) && !isConfirmed && mine === 0
               const inLockedMode = myPayment && !editMode
               const interactionDisabled = !!(lockedByOthers || inLockedMode)
 

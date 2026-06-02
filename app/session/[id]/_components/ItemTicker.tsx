@@ -244,7 +244,9 @@ export default function ItemTicker({
               const totalClaimed = getTotalClaimed(item.id)
               const remaining = item.quantity - totalClaimed
               const myShare = calculateMyItemShare(item)
-              const lockedByOthers = lockedItemIds.has(item.id) && !isPaidItem
+              // Locked by others only if I haven't already claimed it (unconfirmed)
+const lockedByOthers =
+  lockedItemIds.has(item.id) && !isPaidItem && mine === 0
 
               const isDisabled = isPaidItem || itemsLocked || lockedByOthers
               const isTicked = mine > 0 || myShare > 0
