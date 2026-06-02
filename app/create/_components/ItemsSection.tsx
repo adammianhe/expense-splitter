@@ -32,12 +32,12 @@ export default function ItemsSection({ items, onChange }: Props) {
         {items.map((item, index) => (
           <div key={index} className="flex gap-2">
             <input
-              type="text"
-              value={item.name}
-              onChange={(e) => updateItem(index, "name", e.target.value)}
-              placeholder="Dish name"
-              className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:border-black"
-            />
+  type="text"
+  value={item.name}
+  onChange={(e) => updateItem(index, "name", e.target.value)}
+  placeholder="Dish name"
+  className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:border-black text-gray-900 bg-white placeholder:text-gray-400"
+/>
             <input
               type="number"
               value={item.price}

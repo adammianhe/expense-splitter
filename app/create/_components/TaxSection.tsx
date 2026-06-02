@@ -80,7 +80,7 @@ export default function TaxSection({ label, config, onChange }: Props) {
           step="0.01"
           min="0"
           max={config.type === "percentage" ? "100" : undefined}
-          className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:border-black"
+          className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:border-black text-gray-900 bg-white placeholder:text-gray-400"
         />
       </div>
     </div>

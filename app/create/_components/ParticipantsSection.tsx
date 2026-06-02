@@ -36,7 +36,7 @@ export default function ParticipantsSection({ participants, onChange }: Props) {
               value={participant.name}
               onChange={(e) => updateParticipant(index, e.target.value)}
               placeholder={index === 0 ? "Your name (owner)" : "Friend name"}
-              className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:border-black"
+              className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:border-black text-gray-900 bg-white placeholder:text-gray-400"
             />
             {participants.length > 1 && (
               <Button variant="danger" onClick={() => removeParticipant(index)} className="px-3">
