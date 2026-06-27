@@ -1,7 +1,8 @@
 "use client"
 
 import { useState } from "react"
-import { Session } from "@/types"
+import { Session, PaymentMethod } from "@/types"
+import { ChargeLine, formatChargeLabel } from "@/lib/utils"
 import Button from "@/components/ui/Button"
 import { QrCode, Banknote, AlertTriangle, Check } from "lucide-react"
 import Spinner from "@/components/ui/Spinner"
@@ -9,13 +10,31 @@ import Spinner from "@/components/ui/Spinner"
 type Props = {
   session: Session
   amount: number
+  subtotal?: number
+  chargeLines?: ChargeLine[]
+  paymentMethods?: PaymentMethod[]
   onConfirm: (method: "qr" | "cash") => Promise<void>
   onClose: () => void
 }
 
-export default function PaymentModal({ session, amount, onConfirm, onClose }: Props) {
+export default function PaymentModal({
+  session,
+  amount,
+  subtotal,
+  chargeLines = [],
+  paymentMethods = [],
+  onConfirm,
+  onClose,
+}: Props) {
   const [loading, setLoading] = useState(false)
   const [method, setMethod] = useState<"qr" | "cash">("qr")
+  const [selectedQrIndex, setSelectedQrIndex] = useState(0)
+  const [expandedUrl, setExpandedUrl] = useState<string | null>(null)
+
+  const hasMultiple = paymentMethods.length > 0
+  const selectedMethod = hasMultiple
+    ? paymentMethods[Math.min(selectedQrIndex, paymentMethods.length - 1)]
+    : null
 
   const handleConfirm = async () => {
     setLoading(true)
@@ -47,6 +66,32 @@ export default function PaymentModal({ session, amount, onConfirm, onClose }: Pr
           </button>
         </div>
 
+        {/* Bill breakdown (subtotal + each charge) */}
+        {chargeLines.length > 0 && subtotal !== undefined && (
+          <div className="bg-gray-50 border border-gray-200 rounded-xl p-3 space-y-1.5 text-sm">
+            <div className="flex justify-between">
+              <span className="text-gray-600">Subtotal</span>
+              <span className="font-medium text-gray-900">
+                RM {subtotal.toFixed(2)}
+              </span>
+            </div>
+            {chargeLines.map((line, i) => (
+              <div key={i} className="flex justify-between">
+                <span className="text-gray-600">{formatChargeLabel(line)}</span>
+                <span className="font-medium text-gray-900">
+                  RM {line.amount.toFixed(2)}
+                </span>
+              </div>
+            ))}
+            <div className="flex justify-between border-t border-gray-200 pt-1.5">
+              <span className="font-semibold text-gray-900">Total</span>
+              <span className="font-bold text-gray-900">
+                RM {amount.toFixed(2)}
+              </span>
+            </div>
+          </div>
+        )}
+
         {/* Method selector */}
         <div className="flex gap-2 bg-gray-100 p-1 rounded-lg">
           <button
@@ -71,16 +116,63 @@ export default function PaymentModal({ session, amount, onConfirm, onClose }: Pr
 
         {/* QR or Cash content */}
         {method === "qr" ? (
-          session.qr_image_url ? (
+          hasMultiple && selectedMethod ? (
             <div className="space-y-3">
-              <div className="bg-gray-50 rounded-xl p-4 border border-gray-200">
+              {/* Method switcher (only if more than one) */}
+              {paymentMethods.length > 1 && (
+                <div className="flex flex-wrap gap-2">
+                  {paymentMethods.map((pm, i) => (
+                    <button
+                      key={pm.id}
+                      onClick={() => setSelectedQrIndex(i)}
+                      className={`px-3 py-1.5 rounded-full text-xs font-medium transition border ${
+                        i === selectedQrIndex
+                          ? "bg-black text-white border-black"
+                          : "bg-white text-gray-600 border-gray-300 hover:border-gray-400"
+                      }`}
+                    >
+                      {pm.label || `QR ${i + 1}`}
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              <button
+                type="button"
+                onClick={() => setExpandedUrl(selectedMethod.image_url)}
+                className="block w-full bg-gray-50 rounded-xl p-4 border border-gray-200"
+              >
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={selectedMethod.image_url}
+                  alt={selectedMethod.label || "Payment QR"}
+                  className="w-full max-w-xs mx-auto"
+                />
+              </button>
+
+              {selectedMethod.label && (
+                <p className="text-sm font-medium text-gray-900 text-center">
+                  {selectedMethod.label}
+                </p>
+              )}
+              <p className="text-sm text-gray-600 text-center">
+                Scan this QR code, pay <strong>RM {amount.toFixed(2)}</strong>, then click confirm
+              </p>
+            </div>
+          ) : session.qr_image_url ? (
+            <div className="space-y-3">
+              <button
+                type="button"
+                onClick={() => setExpandedUrl(session.qr_image_url)}
+                className="block w-full bg-gray-50 rounded-xl p-4 border border-gray-200"
+              >
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
                   src={session.qr_image_url}
                   alt="Payment QR"
                   className="w-full max-w-xs mx-auto"
                 />
-              </div>
+              </button>
               <p className="text-sm text-gray-600 text-center">
                 Scan this QR code, pay <strong>RM {amount.toFixed(2)}</strong>, then click confirm
               </p>
@@ -126,6 +218,28 @@ export default function PaymentModal({ session, amount, onConfirm, onClose }: Pr
           The owner will verify your payment. Please ensure you have paid correctly.
         </p>
       </div>
+
+      {/* Expanded QR view */}
+      {expandedUrl && (
+        <div
+          className="fixed inset-0 bg-black/90 z-[60] flex items-center justify-center p-4"
+          onClick={() => setExpandedUrl(null)}
+        >
+          <button
+            onClick={() => setExpandedUrl(null)}
+            className="absolute top-4 right-4 text-white text-3xl leading-none"
+          >
+            ×
+          </button>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={expandedUrl}
+            alt="Payment QR full size"
+            className="max-w-full max-h-full object-contain"
+            onClick={(e) => e.stopPropagation()}
+          />
+        </div>
+      )}
     </div>
   )
 }

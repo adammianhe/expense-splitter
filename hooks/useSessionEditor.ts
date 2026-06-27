@@ -33,7 +33,7 @@ const addItem = async (name: string, price: number, quantity: number = 1) => {
   // Update item
   const updateItem = async (itemId: string, name: string, price: number, quantity: number = 1) => {
   if (isItemLocked(itemId)) {
-    throw new Error("Cannot edit — item already paid by someone")
+    throw new Error("Cannot edit, item already paid by someone")
   }
   if (!name.trim()) throw new Error("Item name required")
   if (price < 0) throw new Error("Price cannot be negative")
@@ -51,7 +51,7 @@ const addItem = async (name: string, price: number, quantity: number = 1) => {
   // Delete item
   const deleteItem = async (itemId: string) => {
     if (isItemLocked(itemId)) {
-      throw new Error("Cannot delete — item already paid by someone")
+      throw new Error("Cannot delete, item already paid by someone")
     }
 
     const { error } = await supabase.from("items").delete().eq("id", itemId)

@@ -1,4 +1,4 @@
-// Item type — a dish on the bill (form data)
+// Item type - a dish on the bill (form data)
 export type ItemForm = {
   name: string
   price: string
@@ -6,12 +6,12 @@ export type ItemForm = {
   priceMode: 'each' | 'total'
 }
 
-// Participant type — a person eating (form data)
+// Participant type - a person eating (form data)
 export type ParticipantForm = {
   name: string
 }
 
-// Session form data — everything collected in the create form
+// Session form data - everything collected in the create form
 export type SessionFormData = {
   sessionName: string
   items: ItemForm[]
@@ -65,7 +65,7 @@ export type ItemAssignment = {
   updated_at: string
 }
 
-// A share group — group of people sharing N units of an item
+// A share group - group of people sharing N units of an item
 export type ShareGroup = {
   id: string
   itemId: string
@@ -97,6 +97,25 @@ export type Receipt = {
   session_id: string
   image_url: string
   uploaded_by_participant_id: string | null
+  created_at: string
+}
+
+export type PaymentMethod = {
+  id: string
+  session_id: string
+  image_url: string
+  label: string | null
+  display_order: number
+  created_at: string
+}
+
+export type SessionCharge = {
+  id: string
+  session_id: string
+  label: string | null
+  charge_type: "percentage" | "fixed"
+  charge_value: number
+  display_order: number
   created_at: string
 }
 

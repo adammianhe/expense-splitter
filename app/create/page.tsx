@@ -4,8 +4,8 @@ import { useCreateSession } from "@/hooks/useCreateSession"
 import SessionNameInput from "./_components/SessionNameInput"
 import ItemsSection from "./_components/ItemsSection"
 import ParticipantsSection from "./_components/ParticipantsSection"
-import TaxSection from "./_components/TaxSection"
-import QRUploadSection from "./_components/QRUploadSection"
+import ChargesSection from "./_components/ChargesSection"
+import PaymentMethodsSection from "./_components/PaymentMethodsSection"
 import Button from "@/components/ui/Button"
 import ReceiptUploadSection from "./_components/ReceiptUploadSection"
 import AppHeader from "@/components/AppHeader"
@@ -20,12 +20,10 @@ export default function CreateSessionPage() {
     participants,
     setParticipants,
     receiptFiles, setReceiptFiles,
-    tax,
-    setTax,
-    service,
-    setService,
-    qrFile,
-    setQrFile,
+    charges,
+    setCharges,
+    paymentMethods,
+    setPaymentMethods,
     loading,
     createSession,
   } = useCreateSession()
@@ -43,11 +41,9 @@ export default function CreateSessionPage() {
 
         <ParticipantsSection participants={participants} onChange={setParticipants} />
 
-        <TaxSection label="Tax" config={tax} onChange={setTax} />
+        <ChargesSection charges={charges} onChange={setCharges} />
 
-        <TaxSection label="Service Charge" config={service} onChange={setService} />
-
-        <QRUploadSection file={qrFile} onChange={setQrFile} />
+        <PaymentMethodsSection methods={paymentMethods} onChange={setPaymentMethods} />
 
         <ReceiptUploadSection
   files={receiptFiles}

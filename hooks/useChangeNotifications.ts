@@ -33,7 +33,7 @@ export function useChangeNotifications({
       return
     }
 
-    // ITEMS — added/removed/edited
+    // ITEMS - added/removed/edited
     const prevItemIds = new Set(prevItems.current.map((i) => i.id))
     const currItemIds = new Set(items.map((i) => i.id))
 
@@ -59,7 +59,7 @@ export function useChangeNotifications({
       }
     })
 
-    // PARTICIPANTS — added/removed
+    // PARTICIPANTS - added/removed
     const prevPIds = new Set(prevParticipants.current.map((p) => p.id))
     const currPIds = new Set(participants.map((p) => p.id))
 
@@ -75,7 +75,7 @@ export function useChangeNotifications({
       }
     })
 
-    // SHARES — only notify the current participant about shares involving them
+    // SHARES - only notify the current participant about shares involving them
     if (participantId) {
       const prevShareRows = prevAssignments.current.filter(
         (a) => a.share_group_id !== null
@@ -106,7 +106,7 @@ export function useChangeNotifications({
         )
         if (!myMembership) return
 
-        // I was just tagged — only notify if I'm NOT the initiator
+        // I was just tagged - only notify if I'm NOT the initiator
         if (myMembership.assigned_by_participant_id !== participantId) {
           const initiator = participants.find(
             (p) => p.id === myMembership.assigned_by_participant_id

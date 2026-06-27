@@ -14,6 +14,8 @@ import ItemTicker from "./_components/ItemTicker"
 import OwnerDashboard from "./_components/OwnerDashboard"
 import ToastContainer from "@/components/ui/ToastContainer"
 import { useReceipts } from "@/hooks/useReceipts"
+import { usePaymentMethods } from "@/hooks/usePaymentMethods"
+import { useSessionCharges } from "@/hooks/useSessionCharges"
 import ReceiptManager from "./_components/ReceiptManager"
 import AppHeader from "@/components/AppHeader"
 import { Skeleton, SkeletonCard, SkeletonItemRow } from "@/components/ui/Skeleton"
@@ -23,6 +25,13 @@ export default function SessionPage({ params }: { params: Promise<{ id: string }
   const { id: sessionId } = use(params)
   const { data, loading, error, reload } = useSession(sessionId)
   const { receipts, uploadReceipt, deleteReceipt } = useReceipts(sessionId)
+  const {
+    paymentMethods,
+    uploadPaymentMethod,
+    updatePaymentMethodLabel,
+    deletePaymentMethod,
+  } = usePaymentMethods(sessionId)
+  const { charges } = useSessionCharges(sessionId)
   const [participantId, setParticipantId] = useState<string | null>(null)
   const [checkedStorage, setCheckedStorage] = useState(false)
 
@@ -65,7 +74,8 @@ const {
     data?.participants || [],
     data?.items || [],
     allAssignments,
-    payments
+    payments,
+    charges
   )
 
   const editor = useSessionEditor(sessionId, payments, reload)
@@ -96,7 +106,9 @@ if (data) {
         solo += Number(a.quantity) || 0
       })
 
-    // Fully-confirmed shares
+    // Pending shares reserve capacity too: count any share group that still
+    // has an active (pending or confirmed) member. Only a fully-rejected group
+    // frees the quantity back up for others to claim.
     const shareGroupIds = new Set(
       allAssignments
         .filter((a) => a.item_id === item.id && a.share_group_id !== null)
@@ -104,8 +116,8 @@ if (data) {
     )
     shareGroupIds.forEach((groupId) => {
       const members = allAssignments.filter((a) => a.share_group_id === groupId)
-      const allConfirmed = members.every((m) => m.status === "confirmed")
-      if (allConfirmed) shareTotal += Number(members[0].quantity) || 0
+      const anyActive = members.some((m) => m.status !== "rejected")
+      if (anyActive) shareTotal += Number(members[0].quantity) || 0
     })
 
     claimedPerItem.set(item.id, solo + shareTotal)
@@ -200,6 +212,11 @@ if (data) {
   receipts={receipts}
 onUploadReceipt={(file: File) => uploadReceipt(file, currentParticipant.id).then(() => {})}
 onDeleteReceipt={deleteReceipt}
+paymentMethods={paymentMethods}
+onUploadPaymentMethod={(file: File, label?: string) => uploadPaymentMethod(file, label).then(() => {})}
+onUpdatePaymentMethodLabel={updatePaymentMethodLabel}
+onDeletePaymentMethod={deletePaymentMethod}
+charges={charges}
       session={data.session}
       participant={currentParticipant}
       bills={bills}
@@ -238,6 +255,8 @@ onDeleteReceipt={deleteReceipt}
 ) : (
   <ItemTicker
   receipts={receipts}
+      paymentMethods={paymentMethods}
+      charges={charges}
       session={data.session}
       participant={currentParticipant}
       participants={data.participants}

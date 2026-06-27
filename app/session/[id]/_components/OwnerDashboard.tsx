@@ -3,11 +3,12 @@
 import { useState } from "react"
 import { Session, Participant, Item } from "@/types"
 import { ParticipantBill } from "@/hooks/useSessionBills"
-import { calculateBill, roundToTwoDecimals, formatRelativeDate } from "@/lib/utils"
+import { calculateBillWithCharges, resolveCharges, formatChargeLabel, roundToTwoDecimals, formatRelativeDate } from "@/lib/utils"
 import Button from "@/components/ui/Button"
 import ItemsEditor from "./ItemsEditor"
 import SharePickerModal from "./SharePickerModal"
 import ReceiptManager from "./ReceiptManager"
+import PaymentMethodsManager from "./PaymentMethodsManager"
 import { Link2, Pencil, Banknote, Bell, Lock, AlertTriangle, Camera, Share2, Plus, X, Check } from "lucide-react"
 import Spinner from "@/components/ui/Spinner"
 
@@ -15,6 +16,11 @@ type Props = {
   receipts: import("@/types").Receipt[]
 onUploadReceipt: (file: File) => Promise<void>
 onDeleteReceipt: (receipt: import("@/types").Receipt) => Promise<void>
+  paymentMethods: import("@/types").PaymentMethod[]
+  onUploadPaymentMethod: (file: File, label?: string) => Promise<void>
+  onUpdatePaymentMethodLabel: (id: string, label: string) => Promise<void>
+  onDeletePaymentMethod: (method: import("@/types").PaymentMethod) => Promise<void>
+  charges: import("@/types").SessionCharge[]
   session: Session
   participant: Participant
   bills: ParticipantBill[]
@@ -23,6 +29,8 @@ onDeleteReceipt: (receipt: import("@/types").Receipt) => Promise<void>
   allAssignments: any[]
   summary: {
     totalBill: number
+    itemsSubtotal: number
+    chargeLines: import("@/lib/utils").ChargeLine[]
     totalCollected: number
     totalPending: number
     totalOutstanding: number
@@ -64,6 +72,11 @@ export default function OwnerDashboard({
   receipts,
   onUploadReceipt,
   onDeleteReceipt,
+  paymentMethods,
+  onUploadPaymentMethod,
+  onUpdatePaymentMethodLabel,
+  onDeletePaymentMethod,
+  charges,
   session,
   participant,
   bills,
@@ -169,11 +182,13 @@ export default function OwnerDashboard({
         .map((a) => a.share_group_id)
     )
 
+    // Pending shares reserve capacity: count any group with an active (pending
+    // or confirmed) member. Only a fully-rejected group frees the quantity up.
     let shareTotal = 0
     for (const groupId of shareGroupIds) {
       const members = allAssignments.filter((a) => a.share_group_id === groupId)
-      const allConfirmed = members.every((m) => m.status === "confirmed")
-      if (allConfirmed) shareTotal += Number(members[0].quantity)
+      const anyActive = members.some((m) => m.status !== "rejected")
+      if (anyActive) shareTotal += Number(members[0].quantity)
     }
 
     return solo + shareTotal
@@ -250,11 +265,13 @@ export default function OwnerDashboard({
     return sum + Number(item.price) * effective
   }, 0)
 
-  const newBill = calculateBill(newUnpaidSubtotal, totalSessionSubtotal, session)
+  const appliedCharges = resolveCharges(session, charges)
+  const newBill = calculateBillWithCharges(
+    newUnpaidSubtotal,
+    totalSessionSubtotal,
+    appliedCharges
+  )
   const newTotalToConfirm = roundToTwoDecimals(newBill.total)
-
-  const hasTax = session.tax_type && Number(session.tax_value) > 0
-  const hasService = session.service_type && Number(session.service_value) > 0
 
   const payerNames: Record<string, string[]> = {}
   items.forEach((item) => {
@@ -351,7 +368,7 @@ export default function OwnerDashboard({
 
   const handleNudge = async (participantName: string, amount: number) => {
     const url = window.location.href
-    const message = `Hey ${participantName}, please pay for the meal 👀 RM ${amount.toFixed(2)} — ${url}`
+    const message = `Hey ${participantName}, please pay for the meal 👀 RM ${amount.toFixed(2)} - ${url}`
     try {
       if (navigator.clipboard && window.isSecureContext) {
         await navigator.clipboard.writeText(message)
@@ -486,12 +503,12 @@ export default function OwnerDashboard({
   const getStatusBadge = (bill: ParticipantBill) => {
     if (bill.participant.is_owner) {
       if (!bill.hasTicked) {
-        return { text: "Owner — no items ticked", color: "bg-purple-100 text-purple-800" }
+        return { text: "Owner: no items ticked", color: "bg-purple-100 text-purple-800" }
       }
       if (bill.isVerified && bill.amountOwed === 0) {
-        return { text: "✅ Owner — confirmed all", color: "bg-purple-100 text-purple-800" }
+        return { text: "✅ Owner: confirmed all", color: "bg-purple-100 text-purple-800" }
       }
-      return { text: "Owner — has unconfirmed items", color: "bg-orange-100 text-orange-800" }
+      return { text: "Owner: has unconfirmed items", color: "bg-orange-100 text-orange-800" }
     }
     if (!bill.hasTicked) {
   return { text: "Hasn't ticked yet", color: "bg-gray-100 text-gray-600" }
@@ -560,6 +577,23 @@ export default function OwnerDashboard({
                 RM {summary.totalBill.toFixed(2)}
               </span>
             </div>
+            {summary.chargeLines.length > 0 && (
+              <div className="pl-3 space-y-1 border-l-2 border-gray-100">
+                <div className="flex justify-between text-xs text-gray-400">
+                  <span>Items subtotal</span>
+                  <span>RM {summary.itemsSubtotal.toFixed(2)}</span>
+                </div>
+                {summary.chargeLines.map((line, i) => (
+                  <div
+                    key={i}
+                    className="flex justify-between text-xs text-gray-400"
+                  >
+                    <span>{formatChargeLabel(line)}</span>
+                    <span>RM {line.amount.toFixed(2)}</span>
+                  </div>
+                ))}
+              </div>
+            )}
             <div className="flex justify-between text-sm">
               <span className="text-green-700">✅ Collected</span>
               <span className="font-medium text-green-700">
@@ -586,6 +620,14 @@ export default function OwnerDashboard({
   canManage={true}
   onUpload={onUploadReceipt}
   onDelete={onDeleteReceipt}
+/>
+
+        <PaymentMethodsManager
+  paymentMethods={paymentMethods}
+  canManage={true}
+  onUpload={onUploadPaymentMethod}
+  onUpdateLabel={onUpdatePaymentMethodLabel}
+  onDelete={onDeletePaymentMethod}
 />
 
         {/* YOUR BILL */}
@@ -813,22 +855,14 @@ export default function OwnerDashboard({
                   RM {newBill.subtotal.toFixed(2)}
                 </span>
               </div>
-              {hasTax && (
-                <div className="flex justify-between text-sm">
-                  <span className="text-gray-600">Tax</span>
+              {newBill.chargeLines.map((line, i) => (
+                <div key={i} className="flex justify-between text-sm">
+                  <span className="text-gray-600">{formatChargeLabel(line)}</span>
                   <span className="font-medium text-gray-900">
-                    RM {newBill.tax.toFixed(2)}
+                    RM {line.amount.toFixed(2)}
                   </span>
                 </div>
-              )}
-              {hasService && (
-                <div className="flex justify-between text-sm">
-                  <span className="text-gray-600">Service</span>
-                  <span className="font-medium text-gray-900">
-                    RM {newBill.service.toFixed(2)}
-                  </span>
-                </div>
-              )}
+              ))}
               <div className="border-t border-gray-100 pt-2 flex justify-between items-center">
                 <span className="font-semibold text-gray-900">Total to confirm</span>
                 <span className="text-xl font-bold text-gray-900">
@@ -848,7 +882,7 @@ export default function OwnerDashboard({
       Saving...
     </span>
   ) : (
-    `Confirm — RM ${newTotalToConfirm.toFixed(2)}`
+    `Confirm - RM ${newTotalToConfirm.toFixed(2)}`
   )}
 </Button>
             </div>
@@ -857,7 +891,7 @@ export default function OwnerDashboard({
           {/* Already confirmed summary */}
           {myPayment && Number(myPayment.amount_paid) > 0 && newUnpaidSubtotal === 0 && (
             <div className="bg-green-50 border border-green-200 rounded-lg p-2 text-xs text-green-800 text-center">
-              ✓ All confirmed — RM {Number(myPayment.amount_paid).toFixed(2)}
+              ✓ All confirmed - RM {Number(myPayment.amount_paid).toFixed(2)}
             </div>
           )}
         </div>

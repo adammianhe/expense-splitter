@@ -4,12 +4,8 @@ import { useState } from "react"
 import { useRouter } from "next/navigation"
 import { supabase } from "@/lib/supabase"
 import { ItemForm, ParticipantForm } from "@/types"
-
-export type TaxConfig = {
-  enabled: boolean
-  type: "percentage" | "fixed"
-  value: string
-}
+import { PaymentMethodDraft } from "@/app/create/_components/PaymentMethodsSection"
+import { ChargeInput } from "@/app/create/_components/ChargesSection"
 
 export function useCreateSession() {
   const router = useRouter()
@@ -21,18 +17,8 @@ export function useCreateSession() {
 const [receiptFiles, setReceiptFiles] = useState<File[]>([])
   const [participants, setParticipants] = useState<ParticipantForm[]>([{ name: "" }])
   const [qrFile, setQrFile] = useState<File | null>(null)
-
-  const [tax, setTax] = useState<TaxConfig>({
-    enabled: false,
-    type: "percentage",
-    value: "",
-  })
-
-  const [service, setService] = useState<TaxConfig>({
-    enabled: false,
-    type: "percentage",
-    value: "",
-  })
+  const [paymentMethods, setPaymentMethods] = useState<PaymentMethodDraft[]>([])
+  const [charges, setCharges] = useState<ChargeInput[]>([])
 
   const validate = (): string | null => {
     if (!sessionName.trim()) return "Please enter a session name"
@@ -40,8 +26,8 @@ const [receiptFiles, setReceiptFiles] = useState<File[]>([])
 if (items.some((i) => parseInt(i.quantity) < 1)) return "Quantity must be at least 1"
     if (participants.some((p) => !p.name.trim())) return "Please fill in all participant names"
     if (participants.length < 1) return "Please add at least one participant"
-    if (tax.enabled && !tax.value) return "Please enter a tax value"
-    if (service.enabled && !service.value) return "Please enter a service charge value"
+    if (charges.some((c) => c.charge_value === "" || parseFloat(c.charge_value) < 0))
+      return "Please enter a valid value for each charge"
     return null
   }
 
@@ -85,10 +71,13 @@ if (items.some((i) => parseInt(i.quantity) < 1)) return "Quantity must be at lea
           name: sessionName,
           mode: "normal",
           status: "open",
-          tax_type: tax.enabled ? tax.type : null,
-          tax_value: tax.enabled ? parseFloat(tax.value) : 0,
-          service_type: service.enabled ? service.type : null,
-          service_value: service.enabled ? parseFloat(service.value) : 0,
+          // Unified charges now live in the session_charges table. Legacy
+          // tax/service columns are left empty for backward compat; types are
+          // null (values 0) so old-session fallback logic treats them as absent.
+          tax_type: null,
+          tax_value: 0,
+          service_type: null,
+          service_value: 0,
         })
         .select()
         .single()
@@ -128,7 +117,7 @@ if (ownerParticipant && typeof window !== "undefined") {
   localStorage.setItem(`session_${session.id}_participant`, ownerParticipant.id)
 }
 
-      // 4. Create items — convert to per-item price if mode is "total"
+      // 4. Create items - convert to per-item price if mode is "total"
 const itemRows = items.map((item) => {
   const qty = parseInt(item.quantity) || 1
   const inputPrice = parseFloat(item.price)
@@ -169,11 +158,81 @@ if (receiptFiles.length > 0) {
         })
       }
     } catch (e) {
-      // Best effort — don't fail session creation
+      // Best effort - don't fail session creation
       console.error("Receipt upload error:", e)
     }
   }
 }
+
+      // 6. Upload payment methods (multiple QRs). Legacy single qr_image_url
+      // above still works for backward compat; these are the new multi-QR rows.
+      // Errors here are surfaced (alert + console) instead of swallowed, so a
+      // failed upload/insert is visible rather than silently dropping the QR.
+      if (paymentMethods.length > 0) {
+        const pmErrors: string[] = []
+        for (let i = 0; i < paymentMethods.length; i++) {
+          const { file, label } = paymentMethods[i]
+          const tag = label && label.trim() ? label.trim() : `QR ${i + 1}`
+          try {
+            const ext = file.name.split(".").pop() || "jpg"
+            const fileName = `payment-methods/${session.id}/${Date.now()}_${Math.random().toString(36).slice(2, 8)}.${ext}`
+
+            const { error: uploadError } = await supabase.storage
+              .from("session-uploads")
+              .upload(fileName, file, { cacheControl: "3600", upsert: false })
+
+            if (uploadError) {
+              console.error("Payment method storage upload error:", uploadError)
+              pmErrors.push(`${tag}: ${uploadError.message}`)
+              continue
+            }
+
+            const { data: urlData } = supabase.storage
+              .from("session-uploads")
+              .getPublicUrl(fileName)
+
+            const { error: insertError } = await supabase
+              .from("payment_methods")
+              .insert({
+                session_id: session.id,
+                image_url: urlData.publicUrl,
+                label: label && label.trim() ? label.trim() : null,
+                display_order: i,
+              })
+
+            if (insertError) {
+              console.error("Payment method DB insert error:", insertError)
+              pmErrors.push(`${tag}: ${insertError.message}`)
+            }
+          } catch (e: any) {
+            console.error("Payment method upload error:", e)
+            pmErrors.push(`${tag}: ${e?.message || e}`)
+          }
+        }
+        if (pmErrors.length > 0) {
+          alert("Some payment QR codes failed to save:\n" + pmErrors.join("\n"))
+        }
+      }
+
+      // 7. Insert additional charges (unified tax/service/tip rows)
+      if (charges.length > 0) {
+        const chargeRows = charges.map((c, i) => ({
+          session_id: session.id,
+          label: c.label && c.label.trim() ? c.label.trim() : null,
+          charge_type: c.charge_type,
+          charge_value: parseFloat(c.charge_value) || 0,
+          display_order: i,
+        }))
+
+        const { error: chargesError } = await supabase
+          .from("session_charges")
+          .insert(chargeRows)
+
+        if (chargesError) {
+          console.error("Session charges insert error:", chargesError)
+          alert("Some charges failed to save: " + chargesError.message)
+        }
+      }
 
       if (itemsError) throw itemsError
 
@@ -199,12 +258,12 @@ if (receiptFiles.length > 0) {
     setItems,
     participants,
     setParticipants,
-    tax,
-    setTax,
-    service,
-    setService,
+    charges,
+    setCharges,
     qrFile,
     setQrFile,
+    paymentMethods,
+    setPaymentMethods,
     loading,
     createSession,
     receiptFiles,

@@ -20,7 +20,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Splitto — Split Bills, No Drama",
+  title: "Splitto - Split Bills, No Drama",
   description: "Split bills with friends fairly. No login, no install, just share a link.",
   applicationName: "Splitto",
   manifest: "/manifest.json",

@@ -55,7 +55,7 @@ export function usePayments(sessionId: string) {
   const existing = payments.find((p) => p.participant_id === participantId)
 
   if (existing) {
-    // Update existing — merge paid items, quantities, share groups, increase amount
+    // Update existing - merge paid items, quantities, share groups, increase amount
     const newItemIds = Array.from(
       new Set([...(existing.paid_item_ids || []), ...paidItemIds])
     )
@@ -169,7 +169,7 @@ export function usePayments(sessionId: string) {
 
   
 
-  // Owner confirms their own items — bypasses claim, goes straight to verified
+  // Owner confirms their own items - bypasses claim, goes straight to verified
   const ownerConfirmPayment = async (
   participantId: string,
   amount: number,
@@ -180,7 +180,7 @@ export function usePayments(sessionId: string) {
   const existing = payments.find((p) => p.participant_id === participantId)
 
   if (existing) {
-    // Replace owner's data — they confirm whatever's currently ticked
+    // Replace owner's data - they confirm whatever's currently ticked
     const { error } = await supabase
       .from("payments")
       .update({

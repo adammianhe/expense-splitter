@@ -137,7 +137,7 @@ export function useItemAssignments(sessionId: string, participantId: string | nu
   // SHARE GROUPS
   // ============================================
 
-  // Create a new share — initiator + tagged people
+  // Create a new share - initiator + tagged people
   // Initiator is auto-confirmed, others are pending
   const createShare = async (
     itemId: string,

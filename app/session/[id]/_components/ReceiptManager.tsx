@@ -45,7 +45,7 @@ export default function ReceiptManager({
     }
   }
 
-  // Empty state — show nothing for non-owners
+  // Empty state - show nothing for non-owners
   if (receipts.length === 0 && !canManage) {
     return null
   }
@@ -58,7 +58,7 @@ export default function ReceiptManager({
   Receipts ({receipts.length})
 </div>
 
-        {/* Empty state — dashed upload box */}
+        {/* Empty state - dashed upload box */}
         {receipts.length === 0 && canManage && (
           <button
             type="button"

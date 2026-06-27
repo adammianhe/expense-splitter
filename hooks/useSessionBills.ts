@@ -1,14 +1,20 @@
 "use client"
 
 import { useMemo } from "react"
-import { Item, Participant, Session, Payment } from "@/types"
-import { calculateBill, roundToTwoDecimals } from "@/lib/utils"
+import { Item, Participant, Session, Payment, SessionCharge } from "@/types"
+import {
+  ChargeLine,
+  calculateBillWithCharges,
+  computeChargeLines,
+  resolveCharges,
+  roundToTwoDecimals,
+} from "@/lib/utils"
 
 export type ParticipantBill = {
   participant: Participant
   subtotal: number
-  tax: number
-  service: number
+  chargeLines: ChargeLine[]
+  totalCharges: number
   total: number
   payment: Payment | null
   isClaimed: boolean
@@ -28,12 +34,20 @@ export function useSessionBills(
   participants: Participant[],
   items: Item[],
   allAssignments: any[],
-  payments: Payment[]
+  payments: Payment[],
+  charges: SessionCharge[] = []
 ) {
   return useMemo(() => {
     if (!session) return { bills: [], summary: defaultSummary() }
 
-    // Calculate participant's share of an item — from solo + confirmed shares
+    // Charges to apply: new session_charges rows if any, else legacy tax/service
+    // columns (so old sessions still display and bill correctly).
+    const appliedCharges = resolveCharges(session, charges)
+
+    // Calculate participant's share of an item - from solo + confirmed shares.
+    // NOTE: a participant is only BILLED for a share once the whole group is
+    // confirmed. A pending share reserves item capacity (see totalSessionSubtotal)
+    // but is not yet charged to anyone's personal bill.
     const calculateParticipantItemShare = (
       itemId: string,
       participantId: string,
@@ -53,7 +67,7 @@ export function useSessionBills(
         total += Number(soloAssignment.quantity) * itemPrice
       }
 
-      // Share claims — only confirmed shares count
+      // Share claims - only confirmed shares count toward the personal bill
       const myShares = allAssignments.filter(
         (a) =>
           a.item_id === itemId &&
@@ -95,7 +109,13 @@ export function useSessionBills(
       return false
     }
 
-    // Total session subtotal — solo + fully-confirmed shares (capped at qty)
+    // Total session subtotal - solo + reserved shares (capped at qty).
+    // NUANCE: for capacity / the "X left" counter we count ANY non-rejected
+    // share (pending OR confirmed) so a pending share reserves its slot and
+    // others can't claim over the item quantity. This differs from
+    // calculateParticipantItemShare above, which only charges a participant
+    // once the whole share group is confirmed. So a pending share affects
+    // capacity here but is not yet billed to anyone personally.
     const totalSessionSubtotal = items.reduce((sum, item) => {
       const soloTotal = allAssignments
         .filter(
@@ -115,8 +135,8 @@ export function useSessionBills(
       let shareTotal = 0
       for (const groupId of shareGroupIds) {
         const members = allAssignments.filter((a) => a.share_group_id === groupId)
-        const allConfirmed = members.every((m) => m.status === "confirmed")
-        if (allConfirmed) shareTotal += Number(members[0].quantity)
+        const anyActive = members.some((m) => m.status !== "rejected")
+        if (anyActive) shareTotal += Number(members[0].quantity)
       }
 
       const totalClaimed = soloTotal + shareTotal
@@ -130,7 +150,11 @@ export function useSessionBills(
         return sum + calculateParticipantItemShare(item.id, p.id, Number(item.price))
       }, 0)
 
-      const billCalc = calculateBill(subtotal, totalSessionSubtotal, session)
+      const billCalc = calculateBillWithCharges(
+        subtotal,
+        totalSessionSubtotal,
+        appliedCharges
+      )
       const total = roundToTwoDecimals(billCalc.total)
 
       const payment = payments.find((pay) => pay.participant_id === p.id) || null
@@ -152,8 +176,8 @@ export function useSessionBills(
       return {
         participant: p,
         subtotal: billCalc.subtotal,
-        tax: billCalc.tax,
-        service: billCalc.service,
+        chargeLines: billCalc.chargeLines,
+        totalCharges: billCalc.totalCharges,
         total,
         payment,
         isClaimed,
@@ -174,22 +198,20 @@ export function useSessionBills(
       0
     )
 
-    let billTax = 0
-    let billService = 0
+    // Charges applied to the full restaurant subtotal (for the owner summary).
+    // Using personSubtotal === totalSessionSubtotal === itemsSubtotal means a
+    // fixed charge resolves to its full value and a percentage to its full %.
+    const summaryChargeLines = computeChargeLines(
+      itemsSubtotal,
+      itemsSubtotal,
+      appliedCharges
+    )
+    const totalChargesFull = summaryChargeLines.reduce(
+      (s, l) => s + l.amount,
+      0
+    )
 
-    if (session.tax_type === "percentage") {
-      billTax = itemsSubtotal * (Number(session.tax_value) / 100)
-    } else if (session.tax_type === "fixed") {
-      billTax = Number(session.tax_value)
-    }
-
-    if (session.service_type === "percentage") {
-      billService = itemsSubtotal * (Number(session.service_value) / 100)
-    } else if (session.service_type === "fixed") {
-      billService = Number(session.service_value)
-    }
-
-    const totalBill = itemsSubtotal + billTax + billService
+    const totalBill = itemsSubtotal + totalChargesFull
 
     let totalCollected = 0
     let totalPending = 0
@@ -205,17 +227,21 @@ export function useSessionBills(
       bills,
       summary: {
         totalBill,
+        itemsSubtotal,
+        chargeLines: summaryChargeLines,
         totalCollected,
         totalPending,
         totalOutstanding,
       },
     }
-  }, [session, participants, items, allAssignments, payments])
+  }, [session, participants, items, allAssignments, payments, charges])
 }
 
 function defaultSummary() {
   return {
     totalBill: 0,
+    itemsSubtotal: 0,
+    chargeLines: [] as ChargeLine[],
     totalCollected: 0,
     totalPending: 0,
     totalOutstanding: 0,

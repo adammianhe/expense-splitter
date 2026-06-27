@@ -2,7 +2,7 @@
 
 import { useState } from "react"
 import { Item, Participant, Session, Payment } from "@/types"
-import { calculateBill, roundToTwoDecimals } from "@/lib/utils"
+import { calculateBillWithCharges, resolveCharges, formatChargeLabel, roundToTwoDecimals } from "@/lib/utils"
 import Button from "@/components/ui/Button"
 import PaymentModal from "./PaymentModal"
 import SharePickerModal from "./SharePickerModal"
@@ -11,6 +11,8 @@ import { Lock, Clock } from "lucide-react"
 
 type Props = {
   receipts: import("@/types").Receipt[]
+  paymentMethods: import("@/types").PaymentMethod[]
+  charges: import("@/types").SessionCharge[]
   session: Session
   participant: Participant
   participants: Participant[]
@@ -53,6 +55,8 @@ export default function ItemTicker({
   onSwitchName,
   onClaimPayment,
   receipts,
+  paymentMethods,
+  charges,
 }: Props) {
   const [showPayment, setShowPayment] = useState(false)
   const [shareItem, setShareItem] = useState<Item | null>(null)
@@ -110,7 +114,7 @@ export default function ItemTicker({
     })
   }
 
-  // Total confirmed claims (solo + share) for an item
+  // Total claimed (solo confirmed + reserved shares) for an item
   const getTotalClaimed = (itemId: string): number => {
     const solo = allAssignments
       .filter(
@@ -127,11 +131,13 @@ export default function ItemTicker({
         .map((a) => a.share_group_id)
     )
 
+    // Pending shares reserve capacity: count any group with an active (pending
+    // or confirmed) member. Only a fully-rejected group frees the quantity up.
     let shareTotal = 0
     for (const groupId of shareGroupIds) {
       const members = allAssignments.filter((a) => a.share_group_id === groupId)
-      const allConfirmed = members.every((m) => m.status === "confirmed")
-      if (allConfirmed) shareTotal += Number(members[0].quantity)
+      const anyActive = members.some((m) => m.status !== "rejected")
+      if (anyActive) shareTotal += Number(members[0].quantity)
     }
 
     return solo + shareTotal
@@ -157,7 +163,7 @@ export default function ItemTicker({
   }
 
   // The UNPAID portion of an item (mine - paid)
-  // For solo claims only — shares are atomic (either paid or not)
+  // For solo claims only - shares are atomic (either paid or not)
   const calculateUnpaidSoloShare = (item: Item): number => {
     const totalSolo = mySolo(item.id)
     const paidSolo = myPaidQty(item.id)
@@ -184,7 +190,7 @@ export default function ItemTicker({
     return { total, paidGroupIds: newlyPaidGroupIds }
   }
 
-  // Items with my pending shares — those can't be paid
+  // Items with my pending shares - those can't be paid
   const itemsWithMyPendingShares = new Set(
     items
       .filter((item) =>
@@ -225,12 +231,14 @@ export default function ItemTicker({
     return sum + Number(item.price) * effective
   }, 0)
 
-  // Bill for the NEW unpaid portion (with proportional tax)
-  const newBill = calculateBill(newUnpaidSubtotal, totalSessionSubtotal, session)
+  // Bill for the NEW unpaid portion (with proportional charges)
+  const appliedCharges = resolveCharges(session, charges)
+  const newBill = calculateBillWithCharges(
+    newUnpaidSubtotal,
+    totalSessionSubtotal,
+    appliedCharges
+  )
   const newTotalToPay = roundToTwoDecimals(newBill.total)
-
-  const hasTax = session.tax_type && Number(session.tax_value) > 0
-  const hasService = session.service_type && Number(session.service_value) > 0
 
   // Payment status display
   const paymentStatus = myPayment?.status
@@ -243,17 +251,17 @@ export default function ItemTicker({
     if (!myPayment || !hasPaid) return null
     if (isVerified)
       return {
-        text: `✅ Verified — RM ${Number(myPayment.amount_paid).toFixed(2)} paid`,
+        text: `✅ Verified - RM ${Number(myPayment.amount_paid).toFixed(2)} paid`,
         color: "bg-green-100 text-green-800",
       }
     if (isPaymentClaimed)
       return {
-        text: `⏳ Waiting verification — RM ${Number(myPayment.amount_paid).toFixed(2)}`,
+        text: `⏳ Waiting verification - RM ${Number(myPayment.amount_paid).toFixed(2)}`,
         color: "bg-yellow-100 text-yellow-800",
       }
     if (isUnverified)
       return {
-        text: "❌ Payment unverified — please pay again",
+        text: "❌ Payment unverified, please pay again",
         color: "bg-red-100 text-red-800",
       }
     return null
@@ -514,7 +522,7 @@ export default function ItemTicker({
                     </div>
                   )}
 
-                  {/* Add share button — only if I can still interact */}
+                  {/* Add share button - only if I can still interact */}
                   {!lockedByOthers && (
                     <button
                       onClick={() => setShareItem(item)}
@@ -558,29 +566,14 @@ export default function ItemTicker({
               </span>
             </div>
 
-            {hasTax && (
-              <div className="flex justify-between text-sm">
-                <span className="text-gray-600">
-                  Tax{" "}
-                  {session.tax_type === "percentage" && (
-                    <span className="text-xs text-gray-400">({session.tax_value}%)</span>
-                  )}
+            {newBill.chargeLines.map((line, i) => (
+              <div key={i} className="flex justify-between text-sm">
+                <span className="text-gray-600">{formatChargeLabel(line)}</span>
+                <span className="font-medium text-gray-900">
+                  RM {line.amount.toFixed(2)}
                 </span>
-                <span className="font-medium text-gray-900">RM {newBill.tax.toFixed(2)}</span>
               </div>
-            )}
-
-            {hasService && (
-              <div className="flex justify-between text-sm">
-                <span className="text-gray-600">
-                  Service{" "}
-                  {session.service_type === "percentage" && (
-                    <span className="text-xs text-gray-400">({session.service_value}%)</span>
-                  )}
-                </span>
-                <span className="font-medium text-gray-900">RM {newBill.service.toFixed(2)}</span>
-              </div>
-            )}
+            ))}
 
             <div className="border-t border-gray-200 pt-3 flex justify-between items-center">
               <span className="font-semibold text-gray-900">Total to pay</span>
@@ -610,7 +603,7 @@ export default function ItemTicker({
               onClick={() => setShowPayment(true)}
               className="w-full py-4 text-base"
             >
-              {hasPaid ? "Pay More" : isUnverified ? "Pay Again" : "Pay"} — RM{" "}
+              {hasPaid ? "Pay More" : isUnverified ? "Pay Again" : "Pay"} - RM{" "}
               {newTotalToPay.toFixed(2)}
             </Button>
           </div>
@@ -621,6 +614,9 @@ export default function ItemTicker({
         <PaymentModal
           session={session}
           amount={newTotalToPay}
+          subtotal={newBill.subtotal}
+          chargeLines={newBill.chargeLines}
+          paymentMethods={paymentMethods}
           onConfirm={handleClaimPayment}
           onClose={() => setShowPayment(false)}
         />
