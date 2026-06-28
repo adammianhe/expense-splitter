@@ -3,12 +3,20 @@
 import { useEffect, useRef, useState } from "react"
 import Link from "next/link"
 import { Loader2 } from "lucide-react"
+import { motion, AnimatePresence } from "framer-motion"
 import AppHeader from "@/components/AppHeader"
+import HowItWorksModal from "@/components/HowItWorksModal"
 import { useSessionHistory, SessionHistoryItem } from "@/hooks/useSessionHistory"
 import { addStoredSession } from "@/lib/sessionHistory"
 import SessionList from "@/components/SessionList"
 
 type AuthToast = { type: "success" | "error"; message: string }
+
+const fade = (delay: number, y = 0) => ({
+  initial: { opacity: 0, y },
+  animate: { opacity: 1, y: 0 },
+  transition: { duration: 0.5, delay },
+})
 
 export default function HomePage() {
   const { items, loading, storedCount, refresh } = useSessionHistory()
@@ -19,6 +27,8 @@ export default function HomePage() {
   const [undoItem, setUndoItem] = useState<SessionHistoryItem | null>(null)
   const [undoVisible, setUndoVisible] = useState(false)
   const undoTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const [showHowItWorks, setShowHowItWorks] = useState(false)
 
   // Auth feedback toasts (set by /auth/callback via sessionStorage)
   const [authToast, setAuthToast] = useState<AuthToast | null>(null)
@@ -53,9 +63,6 @@ export default function HomePage() {
     }
   }, [])
 
-  // Show compact/loading layout only when there are stored sessions to load.
-  // If storedCount === 0, skip the loading compact phase and go straight to
-  // first-timer (avoids a flash of the compact skeleton layout).
   const hasHistory =
     !forceFirstTimer &&
     ((loading && storedCount > 0) || items.some((i) => !i.isStale))
@@ -103,7 +110,7 @@ export default function HomePage() {
     <>
       <AppHeader />
 
-      {/* Undo bar — persists across both layouts since it's fixed */}
+      {/* Undo bar */}
       {undoItem && (
         <div
           className={`fixed top-[60px] left-0 right-0 z-40 flex justify-center px-4 transition-all duration-300 ${
@@ -126,7 +133,7 @@ export default function HomePage() {
         </div>
       )}
 
-      {/* Auth toast (sign-in success / error from callback) */}
+      {/* Auth toast */}
       {authToast && (
         <div
           className={`fixed top-[60px] left-0 right-0 z-40 flex justify-center px-4 transition-all duration-300 ${
@@ -164,21 +171,30 @@ export default function HomePage() {
         <main className="min-h-[calc(100dvh-60px)] p-6">
           <div className="max-w-md mx-auto space-y-6 pt-2">
             <div>
-              <h1 className="text-2xl font-bold text-gray-900">
+              <motion.h1
+                {...fade(0.1, 20)}
+                className="text-2xl font-bold text-gray-900"
+              >
                 Split Bill, No Drama
-              </h1>
-              <p className="text-sm text-gray-500 mt-1">
+              </motion.h1>
+              <motion.p {...fade(0.25, 20)} className="text-sm text-gray-500 mt-1">
                 No login, no install, just share a link.
-              </p>
+              </motion.p>
             </div>
 
-            <Link
-              href="/create"
-
-              className="inline-block w-full bg-black text-white py-3 rounded-xl font-semibold hover:bg-gray-800 transition text-center"
+            <motion.div
+              {...fade(0.4, 20)}
+              whileTap={{ scale: 0.97 }}
+              whileHover={{ scale: 1.01 }}
+              transition={{ type: "spring", stiffness: 400, damping: 17 }}
             >
-              Create New Session
-            </Link>
+              <Link
+                href="/create"
+                className="inline-block w-full bg-black text-white py-3 rounded-xl font-semibold hover:bg-gray-800 transition text-center"
+              >
+                Create New Session
+              </Link>
+            </motion.div>
 
             <SessionList
               items={items}
@@ -195,30 +211,67 @@ export default function HomePage() {
         <main className="min-h-[calc(100dvh-60px)] flex items-center justify-center px-6">
           <div className="max-w-md w-full text-center space-y-6">
             <div className="space-y-3">
-              <h1 className="text-4xl font-bold text-gray-900">
+              <motion.h1
+                {...fade(0.1, 20)}
+                className="text-4xl font-bold text-gray-900"
+              >
                 Split Bill, No Drama
-              </h1>
-              <p className="text-gray-600">
+              </motion.h1>
+              <motion.p {...fade(0.25, 20)} className="text-gray-600">
                 Split bills with friends without the headache. No login, no
                 install, just share a link.
-              </p>
+              </motion.p>
             </div>
 
-            <Link
-              href="/create"
-
-              className="inline-block w-full bg-black text-white py-4 rounded-xl font-semibold hover:bg-gray-800 transition"
+            <motion.div
+              initial={{ opacity: 0, y: 20, scale: 0.95 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              transition={{ duration: 0.5, delay: 0.4 }}
+              whileTap={{ scale: 0.97 }}
+              whileHover={{ scale: 1.01 }}
             >
-              Create New Session
-            </Link>
+              <Link
+                href="/create"
+                className="inline-block w-full bg-black text-white py-4 rounded-xl font-semibold hover:bg-gray-800 transition"
+              >
+                Create New Session
+              </Link>
+            </motion.div>
 
-            <p className="text-sm text-gray-500">
+            <motion.p
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ duration: 0.4, delay: 0.6 }}
+              className="text-sm text-gray-500"
+            >
               Create a session, share the link, friends tick items, everyone
               settles up.
-            </p>
+            </motion.p>
+
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ duration: 0.4, delay: 0.75 }}
+            >
+              <button
+                onClick={() => setShowHowItWorks(true)}
+                className="text-sm text-gray-500 hover:text-gray-700 underline-offset-2 hover:underline transition"
+              >
+                How it works
+              </button>
+            </motion.div>
           </div>
         </main>
       )}
+
+      <AnimatePresence>
+        {showHowItWorks && (
+          <HowItWorksModal
+            key="how-it-works"
+            onClose={() => setShowHowItWorks(false)}
+          />
+        )}
+      </AnimatePresence>
     </>
   )
 }

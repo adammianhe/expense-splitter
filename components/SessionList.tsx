@@ -3,6 +3,7 @@
 import Link from "next/link"
 import { useEffect, useRef, useState } from "react"
 import { AlertTriangle, Check, Clock, Info, RefreshCw, X } from "lucide-react"
+import { motion } from "framer-motion"
 import { SessionHistoryItem } from "@/hooks/useSessionHistory"
 import { removeStoredSession } from "@/lib/sessionHistory"
 import { Skeleton } from "@/components/ui/Skeleton"
@@ -153,11 +154,14 @@ export default function SessionList({
 
           {active
             .filter((i) => !removedIds.has(i.sessionId))
-            .map((item) => {
+            .map((item, index) => {
               const dismissing = dismissingIds.has(item.sessionId)
               return (
-                <div
+                <motion.div
                   key={item.sessionId}
+                  initial={{ opacity: 0, y: 12 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.35, delay: index * 0.05 }}
                   className={`transition-all duration-300 ease-out overflow-hidden ${
                     dismissing
                       ? "opacity-0 scale-95 max-h-0 pb-0"
@@ -236,7 +240,7 @@ export default function SessionList({
                       <X size={16} />
                     </button>
                   </div>
-                </div>
+                </motion.div>
               )
             })}
         </>

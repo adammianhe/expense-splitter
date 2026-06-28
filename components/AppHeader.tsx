@@ -3,6 +3,7 @@
 import { useState } from "react"
 import { useRouter, usePathname } from "next/navigation"
 import { Loader2, User, Wallet } from "lucide-react"
+import { AnimatePresence } from "framer-motion"
 import { useAuth } from "@/contexts/AuthContext"
 import { Skeleton } from "@/components/ui/Skeleton"
 import SignInModal from "@/components/SignInModal"
@@ -20,7 +21,10 @@ export default function AppHeader() {
 
   const handleLogoClick = (e: React.MouseEvent) => {
     e.preventDefault()
-    if (pathname === "/") return
+    if (pathname === "/") {
+      window.location.reload()
+      return
+    }
 
     const message = pathname.startsWith("/session/")
       ? "Leave this session and go back home?"
@@ -106,13 +110,18 @@ export default function AppHeader() {
         </div>
       )}
 
-      {showSignIn && <SignInModal onClose={() => setShowSignIn(false)} />}
-      {showProfile && (
-        <ProfileMenu
-          onClose={() => setShowProfile(false)}
-          onSignedOut={handleSignedOut}
-        />
-      )}
+      <AnimatePresence>
+        {showSignIn && <SignInModal key="signin" onClose={() => setShowSignIn(false)} />}
+      </AnimatePresence>
+      <AnimatePresence>
+        {showProfile && (
+          <ProfileMenu
+            key="profile"
+            onClose={() => setShowProfile(false)}
+            onSignedOut={handleSignedOut}
+          />
+        )}
+      </AnimatePresence>
     </>
   )
 }

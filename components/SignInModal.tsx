@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react"
 import { AlertCircle, Loader2, Mail } from "lucide-react"
+import { motion } from "framer-motion"
 import { useAuth } from "@/contexts/AuthContext"
 
 type Props = {
@@ -32,13 +33,11 @@ export default function SignInModal({ onClose }: Props) {
   const [countdown, setCountdown] = useState(0)
   const inputRef = useRef<HTMLInputElement>(null)
 
-  // Auto-focus email input
   useEffect(() => {
     const t = setTimeout(() => inputRef.current?.focus(), 50)
     return () => clearTimeout(t)
   }, [])
 
-  // Esc closes modal
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (e.key === "Escape") onClose()
@@ -47,7 +46,6 @@ export default function SignInModal({ onClose }: Props) {
     return () => document.removeEventListener("keydown", handler)
   }, [onClose])
 
-  // Resend countdown
   useEffect(() => {
     if (countdown <= 0) return
     const t = setTimeout(() => setCountdown((c) => c - 1), 1000)
@@ -73,14 +71,22 @@ export default function SignInModal({ onClose }: Props) {
   const emailError = emailTouched && !emailValid ? "Enter a valid email address" : ""
 
   return (
-    <div
-      className="fixed inset-0 bg-black/50 z-50 flex items-end sm:items-center justify-center p-4"
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      transition={{ duration: 0.2 }}
+      className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4"
       role="dialog"
       aria-modal="true"
       aria-label="Sign in"
       onClick={(e) => { if (e.target === e.currentTarget) onClose() }}
     >
-      <div
+      <motion.div
+        initial={{ opacity: 0, scale: 0.95 }}
+        animate={{ opacity: 1, scale: 1 }}
+        exit={{ opacity: 0, scale: 0.95 }}
+        transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
         className="bg-white rounded-2xl w-full max-w-md p-6 space-y-5"
         onClick={(e) => e.stopPropagation()}
       >
@@ -121,7 +127,10 @@ export default function SignInModal({ onClose }: Props) {
               )}
             </div>
 
-            <button
+            <motion.button
+              whileTap={emailValid && !sending ? { scale: 0.96 } : undefined}
+              whileHover={emailValid && !sending ? { scale: 1.02 } : undefined}
+              transition={{ type: "spring", stiffness: 400, damping: 17 }}
               onClick={sendLink}
               disabled={!emailValid || sending}
               className="w-full bg-black text-white py-3 rounded-xl font-semibold hover:bg-gray-800 transition disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
@@ -134,7 +143,7 @@ export default function SignInModal({ onClose }: Props) {
               ) : (
                 "Send Magic Link"
               )}
-            </button>
+            </motion.button>
           </>
         )}
 
@@ -186,12 +195,15 @@ export default function SignInModal({ onClose }: Props) {
               Use different email
             </button>
 
-            <button
+            <motion.button
+              whileTap={{ scale: 0.96 }}
+              whileHover={{ scale: 1.02 }}
+              transition={{ type: "spring", stiffness: 400, damping: 17 }}
               onClick={onClose}
               className="w-full bg-black text-white py-3 rounded-xl font-semibold hover:bg-gray-800 transition"
             >
               Close
-            </button>
+            </motion.button>
           </>
         )}
 
@@ -216,15 +228,18 @@ export default function SignInModal({ onClose }: Props) {
               <p className="text-sm text-red-500">{errorMsg}</p>
             </div>
 
-            <button
+            <motion.button
+              whileTap={{ scale: 0.96 }}
+              whileHover={{ scale: 1.02 }}
+              transition={{ type: "spring", stiffness: 400, damping: 17 }}
               onClick={() => setState("idle")}
               className="w-full bg-black text-white py-3 rounded-xl font-semibold hover:bg-gray-800 transition"
             >
               Try Again
-            </button>
+            </motion.button>
           </>
         )}
-      </div>
-    </div>
+      </motion.div>
+    </motion.div>
   )
 }

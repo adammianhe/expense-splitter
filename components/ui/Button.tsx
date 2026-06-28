@@ -1,8 +1,9 @@
 "use client"
 
 import { ButtonHTMLAttributes } from "react"
+import { motion, HTMLMotionProps } from "framer-motion"
 
-type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
+type ButtonProps = Omit<HTMLMotionProps<"button">, "ref"> & {
   variant?: "primary" | "secondary" | "danger" | "ghost"
 }
 
@@ -10,9 +11,11 @@ export default function Button({
   variant = "primary",
   className = "",
   children,
+  disabled,
   ...props
 }: ButtonProps) {
-  const baseStyles = "px-4 py-2 rounded-lg font-medium transition disabled:opacity-50 disabled:cursor-not-allowed"
+  const baseStyles =
+    "px-4 py-2 rounded-lg font-medium transition disabled:opacity-50 disabled:cursor-not-allowed"
 
   const variants = {
     primary: "bg-black text-white hover:bg-gray-800",
@@ -21,9 +24,18 @@ export default function Button({
     ghost: "text-blue-600 hover:underline",
   }
 
+  const shouldAnimate = variant !== "ghost" && !disabled
+
   return (
-    <button className={`${baseStyles} ${variants[variant]} ${className}`} {...props}>
+    <motion.button
+      whileTap={shouldAnimate ? { scale: 0.96 } : undefined}
+      whileHover={shouldAnimate ? { scale: 1.02 } : undefined}
+      transition={{ type: "spring", stiffness: 400, damping: 17 }}
+      disabled={disabled}
+      className={`${baseStyles} ${variants[variant]} ${className}`}
+      {...props}
+    >
       {children}
-    </button>
+    </motion.button>
   )
 }

@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react"
 import { Loader2, LogOut } from "lucide-react"
+import { motion } from "framer-motion"
 import { useAuth } from "@/contexts/AuthContext"
 
 type Props = {
@@ -13,7 +14,6 @@ export default function ProfileMenu({ onClose, onSignedOut }: Props) {
   const { user, signOut } = useAuth()
   const [signingOut, setSigningOut] = useState(false)
 
-  // Esc closes menu
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (e.key === "Escape") onClose()
@@ -31,14 +31,22 @@ export default function ProfileMenu({ onClose, onSignedOut }: Props) {
   }
 
   return (
-    <div
-      className="fixed inset-0 bg-black/50 z-50 flex items-end sm:items-center justify-center p-4"
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      transition={{ duration: 0.2 }}
+      className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4"
       role="dialog"
       aria-modal="true"
       aria-label="Profile menu"
       onClick={(e) => { if (e.target === e.currentTarget) onClose() }}
     >
-      <div
+      <motion.div
+        initial={{ opacity: 0, scale: 0.95 }}
+        animate={{ opacity: 1, scale: 1 }}
+        exit={{ opacity: 0, scale: 0.95 }}
+        transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
         className="bg-white rounded-2xl w-full max-w-md p-6 space-y-4"
         onClick={(e) => e.stopPropagation()}
       >
@@ -68,7 +76,10 @@ export default function ProfileMenu({ onClose, onSignedOut }: Props) {
 
         <div className="border-t border-gray-100" />
 
-        <button
+        <motion.button
+          whileTap={!signingOut ? { scale: 0.96 } : undefined}
+          whileHover={!signingOut ? { scale: 1.02 } : undefined}
+          transition={{ type: "spring", stiffness: 400, damping: 17 }}
           onClick={handleSignOut}
           disabled={signingOut}
           className="w-full flex items-center gap-3 px-4 py-3 text-left rounded-xl hover:bg-gray-50 transition disabled:opacity-50 disabled:cursor-not-allowed"
@@ -81,8 +92,8 @@ export default function ProfileMenu({ onClose, onSignedOut }: Props) {
           <span className="font-medium text-sm text-gray-700">
             {signingOut ? "Signing out..." : "Sign Out"}
           </span>
-        </button>
-      </div>
-    </div>
+        </motion.button>
+      </motion.div>
+    </motion.div>
   )
 }
