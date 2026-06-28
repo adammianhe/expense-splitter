@@ -125,3 +125,11 @@ export type LoadedSession = {
   participants: Participant[]
   items: Item[]
 }
+
+import type { User } from "@supabase/supabase-js"
+
+export type AuthState = {
+  user: User | null
+  loading: boolean
+  isSignedIn: boolean
+}

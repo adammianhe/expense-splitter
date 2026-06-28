@@ -6,6 +6,7 @@ import { supabase } from "@/lib/supabase"
 import { ItemForm, ParticipantForm } from "@/types"
 import { PaymentMethodDraft } from "@/app/create/_components/PaymentMethodsSection"
 import { ChargeInput } from "@/app/create/_components/ChargesSection"
+import { addStoredSession } from "@/lib/sessionHistory"
 
 export function useCreateSession() {
   const router = useRouter()
@@ -115,6 +116,17 @@ const ownerParticipant = insertedParticipants?.find((p: any) => p.is_owner)
 // Save owner's participant ID to localStorage so they skip name picker
 if (ownerParticipant && typeof window !== "undefined") {
   localStorage.setItem(`session_${session.id}_participant`, ownerParticipant.id)
+  try {
+    addStoredSession({
+      sessionId: session.id,
+      participantId: ownerParticipant.id,
+      role: "owner",
+      sessionName: sessionName.trim(),
+      joinedAt: new Date().toISOString(),
+    })
+  } catch {
+    // best effort
+  }
 }
 
       // 4. Create items - convert to per-item price if mode is "total"

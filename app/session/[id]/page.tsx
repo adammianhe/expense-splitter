@@ -204,6 +204,7 @@ if (data) {
       {!currentParticipant ? (
   <NamePicker
     sessionId={sessionId}
+    sessionName={data.session.name}
     participants={data.participants}
     onPicked={setParticipantId}
   />

@@ -4,21 +4,34 @@ import { useState } from "react"
 import { Participant } from "@/types"
 import { supabase } from "@/lib/supabase"
 import { saveParticipantId } from "@/lib/utils"
+import { addStoredSession } from "@/lib/sessionHistory"
 import Button from "@/components/ui/Button"
 
 type Props = {
   sessionId: string
+  sessionName: string
   participants: Participant[]
   onPicked: (participantId: string) => void
 }
 
-export default function NamePicker({ sessionId, participants, onPicked }: Props) {
+export default function NamePicker({ sessionId, sessionName, participants, onPicked }: Props) {
   const [adding, setAdding] = useState(false)
   const [newName, setNewName] = useState("")
   const [loading, setLoading] = useState(false)
 
-  const pickName = (participantId: string) => {
+  const pickName = (participantId: string, isOwner = false) => {
     saveParticipantId(sessionId, participantId)
+    try {
+      addStoredSession({
+        sessionId,
+        participantId,
+        role: isOwner ? "owner" : "friend",
+        sessionName,
+        joinedAt: new Date().toISOString(),
+      })
+    } catch {
+      // best effort
+    }
     onPicked(participantId)
   }
 
@@ -37,7 +50,7 @@ export default function NamePicker({ sessionId, participants, onPicked }: Props)
         .single()
 
       if (error) throw error
-      pickName(data.id)
+      pickName(data.id, false)
     } catch (err: any) {
       alert("Error: " + err.message)
       setLoading(false)
@@ -56,7 +69,7 @@ export default function NamePicker({ sessionId, participants, onPicked }: Props)
           {participants.map((p) => (
             <button
               key={p.id}
-              onClick={() => pickName(p.id)}
+              onClick={() => pickName(p.id, p.is_owner)}
               className="w-full p-4 bg-white border border-gray-200 rounded-xl text-left hover:bg-gray-50 transition"
             >
               <div className="font-medium text-gray-900">{p.name}</div>
