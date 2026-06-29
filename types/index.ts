@@ -126,6 +126,16 @@ export type LoadedSession = {
   items: Item[]
 }
 
+export type UserSession = {
+  id: string
+  user_id: string
+  session_id: string
+  participant_id: string
+  role: "owner" | "friend"
+  joined_at: string
+  created_at: string
+}
+
 import type { User } from "@supabase/supabase-js"
 
 export type AuthState = {

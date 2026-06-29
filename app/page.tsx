@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react"
 import Link from "next/link"
-import { Loader2 } from "lucide-react"
+import { ArrowRight, Loader2 } from "lucide-react"
 import { motion, AnimatePresence } from "framer-motion"
 import AppHeader from "@/components/AppHeader"
 import HowItWorksModal from "@/components/HowItWorksModal"
@@ -12,11 +12,6 @@ import SessionList from "@/components/SessionList"
 
 type AuthToast = { type: "success" | "error"; message: string }
 
-const fade = (delay: number, y = 0) => ({
-  initial: { opacity: 0, y },
-  animate: { opacity: 1, y: 0 },
-  transition: { duration: 0.5, delay },
-})
 
 export default function HomePage() {
   const { items, loading, storedCount, refresh } = useSessionHistory()
@@ -169,24 +164,21 @@ export default function HomePage() {
       {hasHistory ? (
         /* ── RETURNING USER: compact top layout ── */
         <main className="min-h-[calc(100dvh-60px)] p-6">
-          <div className="max-w-md mx-auto space-y-6 pt-2">
+          <motion.div
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.5, ease: "easeOut" }}
+            className="max-w-md mx-auto space-y-6 pt-2"
+          >
             <div>
-              <motion.h1
-                {...fade(0.1, 20)}
-                className="text-2xl font-bold text-gray-900"
-              >
-                Split Bill, No Drama
-              </motion.h1>
-              <motion.p {...fade(0.25, 20)} className="text-sm text-gray-500 mt-1">
-                No login, no install, just share a link.
-              </motion.p>
+              <h1 className="text-2xl font-bold text-gray-900">Split Bill, No Drama</h1>
+              <p className="text-sm text-gray-500 mt-1">No login, no install, just share a link.</p>
             </div>
 
             <motion.div
-              {...fade(0.4, 20)}
-              whileTap={{ scale: 0.97 }}
-              whileHover={{ scale: 1.01 }}
-              transition={{ type: "spring", stiffness: 400, damping: 17 }}
+              whileTap={{ scale: 0.92, opacity: 0.85 }}
+              whileHover={{ scale: 1.02 }}
+              transition={{ type: "spring", stiffness: 400, damping: 20 }}
             >
               <Link
                 href="/create"
@@ -204,31 +196,29 @@ export default function HomePage() {
               onBecameEmpty={handleBecameEmpty}
               onRefresh={refresh}
             />
-          </div>
+          </motion.div>
         </main>
       ) : (
         /* ── FIRST TIMER: centered layout ── */
         <main className="min-h-[calc(100dvh-60px)] flex items-center justify-center px-6">
-          <div className="max-w-md w-full text-center space-y-6">
+          <motion.div
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.5, ease: "easeOut" }}
+            className="max-w-md w-full text-center space-y-6"
+          >
             <div className="space-y-3">
-              <motion.h1
-                {...fade(0.1, 20)}
-                className="text-4xl font-bold text-gray-900"
-              >
-                Split Bill, No Drama
-              </motion.h1>
-              <motion.p {...fade(0.25, 20)} className="text-gray-600">
+              <h1 className="text-4xl font-bold text-gray-900">Split Bill, No Drama</h1>
+              <p className="text-gray-600">
                 Split bills with friends without the headache. No login, no
                 install, just share a link.
-              </motion.p>
+              </p>
             </div>
 
             <motion.div
-              initial={{ opacity: 0, y: 20, scale: 0.95 }}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
-              transition={{ duration: 0.5, delay: 0.4 }}
-              whileTap={{ scale: 0.97 }}
-              whileHover={{ scale: 1.01 }}
+              whileTap={{ scale: 0.92, opacity: 0.85 }}
+              whileHover={{ scale: 1.02 }}
+              transition={{ type: "spring", stiffness: 400, damping: 20 }}
             >
               <Link
                 href="/create"
@@ -238,29 +228,22 @@ export default function HomePage() {
               </Link>
             </motion.div>
 
-            <motion.p
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              transition={{ duration: 0.4, delay: 0.6 }}
-              className="text-sm text-gray-500"
-            >
+            <p className="text-sm text-gray-500">
               Create a session, share the link, friends tick items, everyone
               settles up.
-            </motion.p>
+            </p>
 
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              transition={{ duration: 0.4, delay: 0.75 }}
+            <motion.button
+              whileTap={{ scale: 0.95 }}
+              whileHover={{ scale: 1.03 }}
+              transition={{ type: "spring", stiffness: 400, damping: 17 }}
+              onClick={() => setShowHowItWorks(true)}
+              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-full bg-gray-100 hover:bg-gray-200 text-sm font-medium text-gray-700 transition-colors"
             >
-              <button
-                onClick={() => setShowHowItWorks(true)}
-                className="text-sm text-gray-500 hover:text-gray-700 underline-offset-2 hover:underline transition"
-              >
-                How it works
-              </button>
-            </motion.div>
-          </div>
+              How it works
+              <ArrowRight size={14} />
+            </motion.button>
+          </motion.div>
         </main>
       )}
 

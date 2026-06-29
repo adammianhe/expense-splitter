@@ -28,9 +28,9 @@ export default function Button({
 
   return (
     <motion.button
-      whileTap={shouldAnimate ? { scale: 0.96 } : undefined}
+      whileTap={shouldAnimate ? { scale: 0.92, opacity: 0.85 } : undefined}
       whileHover={shouldAnimate ? { scale: 1.02 } : undefined}
-      transition={{ type: "spring", stiffness: 400, damping: 17 }}
+      transition={{ type: "spring", stiffness: 400, damping: 20 }}
       disabled={disabled}
       className={`${baseStyles} ${variants[variant]} ${className}`}
       {...props}
