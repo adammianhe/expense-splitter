@@ -1,39 +1,76 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { useRouter, usePathname } from "next/navigation"
-import { Loader2, User, Wallet } from "lucide-react"
+import { User, Wallet } from "lucide-react"
 import { AnimatePresence } from "framer-motion"
 import { useAuth } from "@/contexts/AuthContext"
+import { useToast } from "@/hooks/useToast"
 import { Skeleton } from "@/components/ui/Skeleton"
 import SignInModal from "@/components/SignInModal"
 import ProfileMenu from "@/components/ProfileMenu"
+import NavigationOverlay from "@/components/NavigationOverlay"
+import ToastContainer from "@/components/ui/ToastContainer"
+import { hasCreateDraft, clearCreateDraft } from "@/lib/createDraft"
 
 export default function AppHeader() {
   const router = useRouter()
   const pathname = usePathname()
   const { user, loading: authLoading, isSignedIn } = useAuth()
+  const { toasts, showToast, dismissToast } = useToast()
 
   const [navigating, setNavigating] = useState(false)
   const [showSignIn, setShowSignIn] = useState(false)
   const [showProfile, setShowProfile] = useState(false)
   const [signOutToast, setSignOutToast] = useState(false)
+  const draftTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  // Clear the "navigating" overlay once the route has actually changed
+  useEffect(() => {
+    setNavigating(false)
+  }, [pathname])
+
+  useEffect(() => {
+    return () => {
+      if (draftTimeoutRef.current) clearTimeout(draftTimeoutRef.current)
+    }
+  }, [])
 
   const handleLogoClick = (e: React.MouseEvent) => {
     e.preventDefault()
+    if (navigating) return // ignore rapid repeat taps
+
     if (pathname === "/") {
       window.location.reload()
       return
     }
 
-    const message = pathname.startsWith("/session/")
-      ? "Leave this session and go back home?"
-      : "Discard this session draft and go back home?"
+    if (pathname === "/create") {
+      if (hasCreateDraft()) {
+        if (draftTimeoutRef.current) clearTimeout(draftTimeoutRef.current)
+        showToast("Draft discarded.", "info", {
+          duration: 5000,
+          action: {
+            label: "Undo",
+            onClick: () => {
+              if (draftTimeoutRef.current) clearTimeout(draftTimeoutRef.current)
+              router.push("/create?restore=true")
+            },
+          },
+        })
+        draftTimeoutRef.current = setTimeout(() => {
+          clearCreateDraft()
+        }, 5000)
+      }
 
-    if (confirm(message)) {
       setNavigating(true)
       router.push("/")
+      return
     }
+
+    // Session pages and everything else: go home, no confirm
+    setNavigating(true)
+    router.push("/")
   }
 
   const handleProfileClick = () => {
@@ -100,15 +137,9 @@ export default function AppHeader() {
         </div>
       )}
 
-      {/* Navigation overlay */}
-      {navigating && (
-        <div className="fixed inset-0 bg-white/90 backdrop-blur-sm z-50 flex items-center justify-center">
-          <div className="flex flex-col items-center gap-3">
-            <Loader2 size={32} className="animate-spin text-gray-700" />
-            <span className="text-sm text-gray-600">Going home...</span>
-          </div>
-        </div>
-      )}
+      <NavigationOverlay visible={navigating} message="Going home..." />
+
+      <ToastContainer toasts={toasts} onDismiss={dismissToast} />
 
       <AnimatePresence>
         {showSignIn && <SignInModal key="signin" onClose={() => setShowSignIn(false)} />}

@@ -1,7 +1,7 @@
 "use client"
 
-import { useState } from "react"
-import { useRouter } from "next/navigation"
+import { useEffect, useRef, useState } from "react"
+import { useRouter, useSearchParams } from "next/navigation"
 import { supabase } from "@/lib/supabase"
 import { ItemForm, ParticipantForm } from "@/types"
 import { PaymentMethodDraft } from "@/app/create/_components/PaymentMethodsSection"
@@ -10,20 +10,59 @@ import { addStoredSession } from "@/lib/sessionHistory"
 import { useAuth } from "@/contexts/AuthContext"
 import { addUserSession } from "@/lib/userSessionsApi"
 import { addToRetryQueue } from "@/lib/syncRetryQueue"
+import { useToast } from "@/hooks/useToast"
+import { readCreateDraft, writeCreateDraft, clearCreateDraft } from "@/lib/createDraft"
+
+const EMPTY_ITEM: ItemForm = { name: "", price: "", quantity: "1", priceMode: "each" }
 
 export function useCreateSession() {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const { user } = useAuth()
+  const { toasts, showToast, dismissToast } = useToast()
   const [loading, setLoading] = useState(false)
   const [sessionName, setSessionName] = useState("")
-  const [items, setItems] = useState<ItemForm[]>([
-  { name: "", price: "", quantity: "1", priceMode: "each" }
-])
+  const [items, setItems] = useState<ItemForm[]>([{ ...EMPTY_ITEM }])
 const [receiptFiles, setReceiptFiles] = useState<File[]>([])
   const [participants, setParticipants] = useState<ParticipantForm[]>([{ name: "" }])
   const [qrFile, setQrFile] = useState<File | null>(null)
   const [paymentMethods, setPaymentMethods] = useState<PaymentMethodDraft[]>([])
   const [charges, setCharges] = useState<ChargeInput[]>([])
+  const restoredRef = useRef(false)
+
+  // Restore draft when navigating back via the undo toast
+  useEffect(() => {
+    if (restoredRef.current) return
+    restoredRef.current = true
+
+    if (searchParams.get("restore") !== "true") return
+
+    const draft = readCreateDraft()
+    if (draft) {
+      setSessionName(draft.sessionName || "")
+      setItems(draft.items?.length ? draft.items : [{ ...EMPTY_ITEM }])
+      setParticipants(draft.participants?.length ? draft.participants : [{ name: "" }])
+      setCharges(draft.charges || [])
+      showToast("Draft restored", "success")
+    }
+    router.replace("/create")
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // Auto-save serializable form fields to sessionStorage on every change,
+  // so the logo-nav undo toast can offer a restore without prop drilling.
+  useEffect(() => {
+    const hasData =
+      sessionName.trim() !== "" ||
+      items.some((i) => i.name.trim() !== "" || i.price !== "") ||
+      participants.some((p) => p.name.trim() !== "")
+
+    if (hasData) {
+      writeCreateDraft({ sessionName, items, participants, charges })
+    } else {
+      clearCreateDraft()
+    }
+  }, [sessionName, items, participants, charges])
 
   const validate = (): string | null => {
     if (!sessionName.trim()) return "Please enter a session name"
@@ -287,6 +326,7 @@ if (receiptFiles.length > 0) {
     if (elapsed < 500) {
       await new Promise((resolve) => setTimeout(resolve, 500 - elapsed))
     }
+      clearCreateDraft()
       router.push(`/session/${session.id}`)
     } catch (error: any) {
       alert("Error: " + error.message)
@@ -313,5 +353,7 @@ if (receiptFiles.length > 0) {
     createSession,
     receiptFiles,
   setReceiptFiles,
+    toasts,
+    dismissToast,
   }
 }

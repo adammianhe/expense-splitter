@@ -1,5 +1,6 @@
 "use client"
 
+import { Suspense } from "react"
 import { useCreateSession } from "@/hooks/useCreateSession"
 import SessionNameInput from "./_components/SessionNameInput"
 import ItemsSection from "./_components/ItemsSection"
@@ -10,8 +11,17 @@ import Button from "@/components/ui/Button"
 import ReceiptUploadSection from "./_components/ReceiptUploadSection"
 import AppHeader from "@/components/AppHeader"
 import Spinner from "@/components/ui/Spinner"
+import ToastContainer from "@/components/ui/ToastContainer"
 
 export default function CreateSessionPage() {
+  return (
+    <Suspense fallback={null}>
+      <CreateSessionForm />
+    </Suspense>
+  )
+}
+
+function CreateSessionForm() {
   const {
     sessionName,
     setSessionName,
@@ -26,11 +36,14 @@ export default function CreateSessionPage() {
     setPaymentMethods,
     loading,
     createSession,
+    toasts,
+    dismissToast,
   } = useCreateSession()
 
   return (
     <>
       <AppHeader />
+      <ToastContainer toasts={toasts} onDismiss={dismissToast} />
       <main className="min-h-screen bg-gray-50 p-6">
         <div className="max-w-md mx-auto space-y-6">
           <h1 className="text-3xl font-bold text-gray-900">Create Session</h1>

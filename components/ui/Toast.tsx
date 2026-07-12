@@ -2,10 +2,17 @@
 
 import { useEffect, useState } from "react"
 
+export type ToastAction = {
+  label: string
+  onClick: () => void
+}
+
 export type ToastMessage = {
   id: string
   text: string
   type?: "info" | "success" | "warning" | "error"
+  action?: ToastAction
+  duration?: number
 }
 
 type Props = {
@@ -20,14 +27,14 @@ export default function Toast({ toast, onDismiss }: Props) {
     // Slide in
     setTimeout(() => setVisible(true), 10)
 
-    // Auto dismiss after 3.5s
+    // Auto dismiss
     const timer = setTimeout(() => {
       setVisible(false)
       setTimeout(() => onDismiss(toast.id), 300)
-    }, 3500)
+    }, toast.duration ?? 3500)
 
     return () => clearTimeout(timer)
-  }, [toast.id, onDismiss])
+  }, [toast.id, toast.duration, onDismiss])
 
   const colors = {
     info: "bg-blue-50 border-blue-200 text-blue-900",
@@ -43,11 +50,23 @@ export default function Toast({ toast, onDismiss }: Props) {
       }`}
     >
       <div
-        className={`px-4 py-3 rounded-lg border shadow-sm text-sm font-medium ${
+        className={`px-4 py-3 rounded-lg border shadow-sm text-sm font-medium flex items-center justify-between gap-3 ${
           colors[toast.type || "info"]
         }`}
       >
-        {toast.text}
+        <span>{toast.text}</span>
+        {toast.action && (
+          <button
+            onClick={() => {
+              toast.action!.onClick()
+              setVisible(false)
+              setTimeout(() => onDismiss(toast.id), 300)
+            }}
+            className="flex-shrink-0 text-sm font-semibold underline hover:no-underline"
+          >
+            {toast.action.label}
+          </button>
+        )}
       </div>
     </div>
   )
