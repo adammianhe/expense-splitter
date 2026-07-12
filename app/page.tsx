@@ -6,14 +6,19 @@ import { ArrowRight, Loader2 } from "lucide-react"
 import { motion, AnimatePresence } from "framer-motion"
 import AppHeader from "@/components/AppHeader"
 import HowItWorksModal from "@/components/HowItWorksModal"
+import SignInModal from "@/components/SignInModal"
+import SignInBanner from "@/components/SignInBanner"
 import { useSessionHistory, SessionHistoryItem } from "@/hooks/useSessionHistory"
 import { addStoredSession } from "@/lib/sessionHistory"
+import { addUserSession } from "@/lib/userSessionsApi"
+import { useAuth } from "@/contexts/AuthContext"
 import SessionList from "@/components/SessionList"
 
 type AuthToast = { type: "success" | "error"; message: string }
 
 
 export default function HomePage() {
+  const { user, isSignedIn } = useAuth()
   const { items, loading, storedCount, refresh } = useSessionHistory()
 
   const [forceFirstTimer, setForceFirstTimer] = useState(false)
@@ -24,6 +29,7 @@ export default function HomePage() {
   const undoTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const [showHowItWorks, setShowHowItWorks] = useState(false)
+  const [showSignInModal, setShowSignInModal] = useState(false)
 
   // Auth feedback toasts (set by /auth/callback via sessionStorage)
   const [authToast, setAuthToast] = useState<AuthToast | null>(null)
@@ -93,6 +99,18 @@ export default function HomePage() {
       sessionName: undoItem.sessionName,
       joinedAt: undoItem.joinedAt,
     })
+
+    if (user) {
+      addUserSession({
+        userId: user.id,
+        sessionId: undoItem.sessionId,
+        participantId: undoItem.participantId,
+        role: undoItem.role,
+        joinedAt: undoItem.joinedAt,
+      }).catch(() => {
+        // best effort — local re-add already succeeded
+      })
+    }
 
     setUndoVisible(false)
     setTimeout(() => setUndoItem(null), 300)
@@ -176,7 +194,7 @@ export default function HomePage() {
             </div>
 
             <motion.div
-              whileTap={{ scale: 0.92, opacity: 0.85 }}
+              whileTap={{ scale: 0.94, opacity: 0.85 }}
               whileHover={{ scale: 1.02 }}
               transition={{ type: "spring", stiffness: 400, damping: 20 }}
             >
@@ -196,6 +214,10 @@ export default function HomePage() {
               onBecameEmpty={handleBecameEmpty}
               onRefresh={refresh}
             />
+
+            {!isSignedIn && items.filter((i) => !i.isStale).length >= 2 && (
+              <SignInBanner onSignInClick={() => setShowSignInModal(true)} />
+            )}
           </motion.div>
         </main>
       ) : (
@@ -207,16 +229,25 @@ export default function HomePage() {
             transition={{ duration: 0.5, ease: "easeOut" }}
             className="max-w-md w-full text-center space-y-6"
           >
-            <div className="space-y-3">
-              <h1 className="text-4xl font-bold text-gray-900">Split Bill, No Drama</h1>
-              <p className="text-gray-600">
-                Split bills with friends without the headache. No login, no
-                install, just share a link.
-              </p>
-            </div>
+            {isSignedIn ? (
+              <div className="space-y-3">
+                <h1 className="text-4xl font-bold text-gray-900">No sessions yet</h1>
+                <p className="text-gray-600">
+                  Create your first bill to get started.
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                <h1 className="text-4xl font-bold text-gray-900">Split Bill, No Drama</h1>
+                <p className="text-gray-600">
+                  Split bills with friends without the headache. No login, no
+                  install, just share a link.
+                </p>
+              </div>
+            )}
 
             <motion.div
-              whileTap={{ scale: 0.92, opacity: 0.85 }}
+              whileTap={{ scale: 0.94, opacity: 0.85 }}
               whileHover={{ scale: 1.02 }}
               transition={{ type: "spring", stiffness: 400, damping: 20 }}
             >
@@ -228,21 +259,25 @@ export default function HomePage() {
               </Link>
             </motion.div>
 
-            <p className="text-sm text-gray-500">
-              Create a session, share the link, friends tick items, everyone
-              settles up.
-            </p>
+            {!isSignedIn && (
+              <>
+                <p className="text-sm text-gray-500">
+                  Create a session, share the link, friends tick items, everyone
+                  settles up.
+                </p>
 
-            <motion.button
-              whileTap={{ scale: 0.95 }}
-              whileHover={{ scale: 1.03 }}
-              transition={{ type: "spring", stiffness: 400, damping: 17 }}
-              onClick={() => setShowHowItWorks(true)}
-              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-full bg-gray-100 hover:bg-gray-200 text-sm font-medium text-gray-700 transition-colors"
-            >
-              How it works
-              <ArrowRight size={14} />
-            </motion.button>
+                <motion.button
+                  whileTap={{ scale: 0.95 }}
+                  whileHover={{ scale: 1.03 }}
+                  transition={{ type: "spring", stiffness: 400, damping: 17 }}
+                  onClick={() => setShowHowItWorks(true)}
+                  className="inline-flex items-center gap-1.5 px-4 py-2 rounded-full bg-gray-100 hover:bg-gray-200 text-sm font-medium text-gray-700 transition-colors"
+                >
+                  How it works
+                  <ArrowRight size={14} />
+                </motion.button>
+              </>
+            )}
           </motion.div>
         </main>
       )}
@@ -252,6 +287,15 @@ export default function HomePage() {
           <HowItWorksModal
             key="how-it-works"
             onClose={() => setShowHowItWorks(false)}
+          />
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {showSignInModal && (
+          <SignInModal
+            key="signin-banner"
+            onClose={() => setShowSignInModal(false)}
           />
         )}
       </AnimatePresence>

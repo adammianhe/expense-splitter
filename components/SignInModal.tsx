@@ -128,7 +128,7 @@ export default function SignInModal({ onClose }: Props) {
             </div>
 
             <motion.button
-              whileTap={emailValid && !sending ? { scale: 0.92, opacity: 0.85 } : undefined}
+              whileTap={emailValid && !sending ? { scale: 0.94, opacity: 0.85 } : undefined}
               whileHover={emailValid && !sending ? { scale: 1.02 } : undefined}
               transition={{ type: "spring", stiffness: 400, damping: 20 }}
               onClick={sendLink}
@@ -196,7 +196,7 @@ export default function SignInModal({ onClose }: Props) {
             </button>
 
             <motion.button
-              whileTap={{ scale: 0.92, opacity: 0.85 }}
+              whileTap={{ scale: 0.94, opacity: 0.85 }}
               whileHover={{ scale: 1.02 }}
               transition={{ type: "spring", stiffness: 400, damping: 20 }}
               onClick={onClose}
@@ -229,7 +229,7 @@ export default function SignInModal({ onClose }: Props) {
             </div>
 
             <motion.button
-              whileTap={{ scale: 0.92, opacity: 0.85 }}
+              whileTap={{ scale: 0.94, opacity: 0.85 }}
               whileHover={{ scale: 1.02 }}
               transition={{ type: "spring", stiffness: 400, damping: 20 }}
               onClick={() => setState("idle")}

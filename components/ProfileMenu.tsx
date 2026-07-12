@@ -1,9 +1,12 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { Loader2, LogOut } from "lucide-react"
+import { Loader2, LogOut, RefreshCw } from "lucide-react"
 import { motion } from "framer-motion"
 import { useAuth } from "@/contexts/AuthContext"
+import { useToast } from "@/hooks/useToast"
+import { syncSessionsToAccount } from "@/lib/syncSessionsToAccount"
+import ToastContainer from "@/components/ui/ToastContainer"
 
 type Props = {
   onClose: () => void
@@ -12,7 +15,27 @@ type Props = {
 
 export default function ProfileMenu({ onClose, onSignedOut }: Props) {
   const { user, signOut } = useAuth()
+  const { toasts, showToast, dismissToast } = useToast()
   const [signingOut, setSigningOut] = useState(false)
+  const [syncing, setSyncing] = useState(false)
+
+  const handleSyncNow = async () => {
+    if (!user) return
+    setSyncing(true)
+    try {
+      const result = await syncSessionsToAccount(user.id)
+      if (result.newlySynced > 0) {
+        const label = result.newlySynced === 1 ? "session" : "sessions"
+        showToast(`Synced ${result.newlySynced} new ${label}`, "success")
+      } else {
+        showToast("Everything is up to date", "info")
+      }
+    } catch {
+      showToast("Sync failed. Try again.", "error")
+    } finally {
+      setSyncing(false)
+    }
+  }
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -76,8 +99,19 @@ export default function ProfileMenu({ onClose, onSignedOut }: Props) {
 
         <div className="border-t border-gray-100" />
 
+        <button
+          onClick={handleSyncNow}
+          disabled={syncing}
+          className="w-full flex items-center gap-3 px-4 py-3 text-left rounded-xl hover:bg-gray-50 transition disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          <RefreshCw size={16} className={`text-gray-500 ${syncing ? "animate-spin" : ""}`} />
+          <span className="font-medium text-sm text-gray-700">
+            {syncing ? "Syncing..." : "Sync Now"}
+          </span>
+        </button>
+
         <motion.button
-          whileTap={!signingOut ? { scale: 0.92, opacity: 0.85 } : undefined}
+          whileTap={!signingOut ? { scale: 0.94, opacity: 0.85 } : undefined}
           whileHover={!signingOut ? { scale: 1.02 } : undefined}
           transition={{ type: "spring", stiffness: 400, damping: 20 }}
           onClick={handleSignOut}
@@ -94,6 +128,8 @@ export default function ProfileMenu({ onClose, onSignedOut }: Props) {
           </span>
         </motion.button>
       </motion.div>
+
+      <ToastContainer toasts={toasts} onDismiss={dismissToast} />
     </motion.div>
   )
 }

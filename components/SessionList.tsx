@@ -6,6 +6,8 @@ import { AlertTriangle, Check, Clock, Info, RefreshCw, X } from "lucide-react"
 import { motion } from "framer-motion"
 import { SessionHistoryItem } from "@/hooks/useSessionHistory"
 import { removeStoredSession } from "@/lib/sessionHistory"
+import { removeUserSession } from "@/lib/userSessionsApi"
+import { useAuth } from "@/contexts/AuthContext"
 import { Skeleton } from "@/components/ui/Skeleton"
 import { getRelativeTime } from "@/lib/timeUtils"
 
@@ -26,6 +28,7 @@ export default function SessionList({
   onBecameEmpty,
   onRefresh,
 }: Props) {
+  const { user } = useAuth()
   const [showStale, setShowStale] = useState(false)
   const [removedIds, setRemovedIds] = useState(new Set<string>())
   const [dismissingIds, setDismissingIds] = useState(new Set<string>())
@@ -48,10 +51,11 @@ export default function SessionList({
     setTimeout(() => setRefreshing(false), 800)
   }
 
-  const handleRemove = (e: React.MouseEvent, item: SessionHistoryItem) => {
+  const handleRemove = (e: React.MouseEvent, item: SessionHistoryItem, skipConfirm = false) => {
     e.preventDefault()
 
     if (
+      !skipConfirm &&
       !window.confirm(
         "Remove from your list? The session itself isn't deleted. You can still access it via the link."
       )
@@ -62,6 +66,13 @@ export default function SessionList({
 
     setTimeout(() => {
       removeStoredSession(item.sessionId)
+      if (user) {
+        removeUserSession({ userId: user.id, sessionId: item.sessionId }).catch(
+          () => {
+            // best effort — local removal already succeeded
+          }
+        )
+      }
 
       const next = new Set(removedIdsRef.current).add(item.sessionId)
       removedIdsRef.current = next
@@ -171,8 +182,14 @@ export default function SessionList({
                   <div className="relative">
                     <Link
                       href={`/session/${item.sessionId}`}
-                      className={`block border rounded-xl p-4 space-y-1.5 pr-10 transition cursor-pointer
-                        shadow-sm hover:shadow-md active:bg-gray-50
+                      className="block"
+                    >
+                    <motion.div
+                      whileTap={{ scale: 0.97 }}
+                      whileHover={{ scale: 1.01 }}
+                      transition={{ type: "spring", stiffness: 400, damping: 20 }}
+                      className={`border rounded-xl p-4 space-y-1.5 pr-10 cursor-pointer
+                        shadow-sm hover:shadow-md transition-shadow duration-200
                         ${item.fetchError
                           ? "bg-gray-50 border-gray-200"
                           : "bg-white border-gray-200 hover:border-gray-300"
@@ -229,16 +246,18 @@ export default function SessionList({
                           </span>
                         )}
                       </div>
+                    </motion.div>
                     </Link>
 
-                    <button
+                    <motion.button
                       type="button"
+                      whileTap={{ scale: 0.9 }}
                       onClick={(e) => handleRemove(e, item)}
                       aria-label="Remove session"
                       className="absolute top-0 right-0 p-2 text-gray-400 hover:text-red-500 transition z-10"
                     >
                       <X size={16} />
-                    </button>
+                    </motion.button>
                   </div>
                 </motion.div>
               )
@@ -247,27 +266,47 @@ export default function SessionList({
       )}
 
       {/* Stale sessions */}
-      {stale.length > 0 && (
-        <div className="space-y-2 mt-1">
+      {stale.filter((i) => !removedIds.has(i.sessionId)).length > 0 && (
+        <div className="mt-4">
           <button
             onClick={() => setShowStale(!showStale)}
-            className="text-xs text-gray-400 hover:text-gray-500 transition"
+            className="text-xs text-gray-500 hover:text-gray-700 transition"
           >
-            {stale.length} session{stale.length > 1 ? "s" : ""} no longer
-            available [{showStale ? "hide" : "show"}]
+            {showStale ? "Hide" : "Show"}{" "}
+            {stale.filter((i) => !removedIds.has(i.sessionId)).length} unavailable{" "}
+            {stale.filter((i) => !removedIds.has(i.sessionId)).length === 1
+              ? "session"
+              : "sessions"}
           </button>
-          {showStale &&
-            stale.map((item) => (
-              <div
-                key={item.sessionId}
-                className="bg-gray-50 border border-gray-200 rounded-xl p-4 space-y-0.5 opacity-60"
-              >
-                <p className="font-medium text-gray-600 text-sm">
-                  {item.sessionName}
-                </p>
-                <p className="text-xs text-gray-400">No longer available</p>
-              </div>
-            ))}
+
+          {showStale && (
+            <div className="mt-2 space-y-2">
+              {stale
+                .filter((i) => !removedIds.has(i.sessionId))
+                .map((item) => (
+                  <div
+                    key={item.sessionId}
+                    className="bg-gray-50 border border-gray-200 rounded-lg p-3 flex items-center justify-between"
+                  >
+                    <div>
+                      <p className="text-sm text-gray-500 line-through">
+                        {item.sessionName}
+                      </p>
+                      <p className="text-xs text-gray-400">
+                        Session no longer available
+                      </p>
+                    </div>
+                    <button
+                      onClick={(e) => handleRemove(e, item, true)}
+                      aria-label="Remove session"
+                      className="text-gray-400 hover:text-red-500 p-2"
+                    >
+                      <X size={16} />
+                    </button>
+                  </div>
+                ))}
+            </div>
+          )}
         </div>
       )}
     </div>

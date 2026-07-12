@@ -94,7 +94,7 @@ export default function AppHeader() {
         <div className="fixed top-[60px] left-0 right-0 z-40 flex justify-center px-4 pt-2 pointer-events-none">
           <div className="max-w-md w-full">
             <div className="bg-gray-900 text-white text-sm rounded-xl px-4 py-3 shadow-lg text-center">
-              Signed out successfully
+              Signed out. Your local sessions are still here.
             </div>
           </div>
         </div>

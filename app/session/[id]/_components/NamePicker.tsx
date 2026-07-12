@@ -5,6 +5,9 @@ import { Participant } from "@/types"
 import { supabase } from "@/lib/supabase"
 import { saveParticipantId } from "@/lib/utils"
 import { addStoredSession } from "@/lib/sessionHistory"
+import { useAuth } from "@/contexts/AuthContext"
+import { addUserSession } from "@/lib/userSessionsApi"
+import { addToRetryQueue } from "@/lib/syncRetryQueue"
 import Button from "@/components/ui/Button"
 
 type Props = {
@@ -15,23 +18,43 @@ type Props = {
 }
 
 export default function NamePicker({ sessionId, sessionName, participants, onPicked }: Props) {
+  const { user } = useAuth()
   const [adding, setAdding] = useState(false)
   const [newName, setNewName] = useState("")
   const [loading, setLoading] = useState(false)
 
   const pickName = (participantId: string, isOwner = false) => {
     saveParticipantId(sessionId, participantId)
+    const role = isOwner ? "owner" : "friend"
+    const joinedAt = new Date().toISOString()
     try {
       addStoredSession({
         sessionId,
         participantId,
-        role: isOwner ? "owner" : "friend",
+        role,
         sessionName,
-        joinedAt: new Date().toISOString(),
+        joinedAt,
       })
     } catch {
       // best effort
     }
+
+    if (user) {
+      addUserSession({
+        userId: user.id,
+        sessionId,
+        participantId,
+        role,
+        joinedAt,
+      }).then((result) => {
+        if (result.error) {
+          addToRetryQueue({ sessionId, participantId, role, joinedAt, attemptedAt: new Date().toISOString() })
+        }
+      }).catch(() => {
+        addToRetryQueue({ sessionId, participantId, role, joinedAt, attemptedAt: new Date().toISOString() })
+      })
+    }
+
     onPicked(participantId)
   }
 

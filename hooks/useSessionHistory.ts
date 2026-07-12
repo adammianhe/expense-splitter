@@ -5,6 +5,8 @@ import { supabase } from "@/lib/supabase"
 import { getStoredSessions, StoredSession } from "@/lib/sessionHistory"
 import { resolveCharges, computeChargeLines, calculateBillWithCharges } from "@/lib/utils"
 import { Session, Item, SessionCharge } from "@/types"
+import { useAuth } from "@/contexts/AuthContext"
+import { useUserSessions } from "@/hooks/useUserSessions"
 
 export type SessionHistoryItem = {
   sessionId: string
@@ -231,6 +233,9 @@ async function fetchOne(stored: StoredSession): Promise<SessionHistoryItem> {
 }
 
 export function useSessionHistory() {
+  const { user } = useAuth()
+  const { userSessions, loading: userSessionsLoading } = useUserSessions()
+
   const [items, setItems] = useState<SessionHistoryItem[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -252,12 +257,37 @@ export function useSessionHistory() {
     setError(null)
     try {
       const stored = getStoredSessions()
-      if (stored.length === 0) {
+
+      // Merge localStorage + DB sources, deduped by sessionId. localStorage
+      // wins on conflict since it carries the user's own device state.
+      const sessionMap = new Map<string, StoredSession>()
+      for (const s of stored) {
+        sessionMap.set(s.sessionId, s)
+      }
+      if (user) {
+        for (const us of userSessions) {
+          if (!sessionMap.has(us.session_id)) {
+            sessionMap.set(us.session_id, {
+              sessionId: us.session_id,
+              participantId: us.participant_id,
+              role: us.role,
+              sessionName: "Session",
+              joinedAt: us.joined_at,
+            })
+          }
+        }
+      }
+
+      const merged = Array.from(sessionMap.values())
+      if (merged.length === 0) {
         setItems([])
         setLoading(false)
         return
       }
-      const results = await Promise.all(stored.map(fetchOne))
+      const results = await Promise.all(merged.map(fetchOne))
+      results.sort(
+        (a, b) => new Date(b.joinedAt).getTime() - new Date(a.joinedAt).getTime()
+      )
       setItems(results)
     } catch (e: any) {
       // Total failure (e.g. Supabase down) — fall back to cached names with fetchError
@@ -270,9 +300,15 @@ export function useSessionHistory() {
   }
 
   useEffect(() => {
+    // Wait for user_sessions to resolve before merging, so signed-in loads
+    // don't briefly show a localStorage-only list then jump.
+    if (user && userSessionsLoading) {
+      setLoading(true)
+      return
+    }
     load()
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user, userSessions, userSessionsLoading])
 
   return { items, loading, error, storedCount, refresh: load }
 }
