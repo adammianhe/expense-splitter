@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useState } from "react"
 import Link from "next/link"
 import { ArrowRight, Loader2 } from "lucide-react"
 import { motion, AnimatePresence } from "framer-motion"
@@ -12,7 +12,10 @@ import { useSessionHistory, SessionHistoryItem } from "@/hooks/useSessionHistory
 import { addStoredSession } from "@/lib/sessionHistory"
 import { addUserSession } from "@/lib/userSessionsApi"
 import { useAuth } from "@/contexts/AuthContext"
+import { useToast } from "@/hooks/useToast"
+import ToastContainer from "@/components/ui/ToastContainer"
 import SessionList from "@/components/SessionList"
+import SessionsOverlay from "@/components/SessionsOverlay"
 
 type AuthToast = { type: "success" | "error"; message: string }
 
@@ -21,15 +24,30 @@ export default function HomePage() {
   const { user, isSignedIn } = useAuth()
   const { items, loading, storedCount, refresh } = useSessionHistory()
 
+  // localStorage-backed state (storedCount, items) differs between server
+  // and client's first paint, so `hasHistory` must not switch layouts until
+  // after mount — otherwise the client's first render (which already sees
+  // localStorage) diverges from the server-rendered HTML being hydrated.
+  const [mounted, setMounted] = useState(false)
+  useEffect(() => {
+    setMounted(true)
+  }, [])
+
   const [forceFirstTimer, setForceFirstTimer] = useState(false)
   const [cleaningUp, setCleaningUp] = useState(false)
 
-  const [undoItem, setUndoItem] = useState<SessionHistoryItem | null>(null)
-  const [undoVisible, setUndoVisible] = useState(false)
-  const undoTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  // Sessions hidden due to removal. Owned here (not inside SessionList /
+  // SessionsOverlay) so Undo can be a pure in-memory toggle — no skeleton,
+  // no refetch. The underlying `items` array is never mutated by removal;
+  // only this set decides what's visible.
+  const [removedIds, setRemovedIds] = useState<Set<string>>(new Set())
+  const visibleItems = items.filter((i) => !removedIds.has(i.sessionId))
+
+  const { toasts, showToast, dismissToast } = useToast()
 
   const [showHowItWorks, setShowHowItWorks] = useState(false)
   const [showSignInModal, setShowSignInModal] = useState(false)
+  const [showSessionsOverlay, setShowSessionsOverlay] = useState(false)
 
   // Auth feedback toasts (set by /auth/callback via sessionStorage)
   const [authToast, setAuthToast] = useState<AuthToast | null>(null)
@@ -65,86 +83,68 @@ export default function HomePage() {
   }, [])
 
   const hasHistory =
+    mounted &&
     !forceFirstTimer &&
-    ((loading && storedCount > 0) || items.some((i) => !i.isStale))
+    ((loading && storedCount > 0) || visibleItems.some((i) => !i.isStale))
 
-  const handleBecameEmpty = () => {
-    setCleaningUp(true)
-    setTimeout(() => {
-      setCleaningUp(false)
-      setForceFirstTimer(true)
-    }, 600)
-  }
-
-  const handleRemoved = (item: SessionHistoryItem) => {
-    if (undoTimerRef.current) clearTimeout(undoTimerRef.current)
-
-    setUndoItem(item)
-    setUndoVisible(true)
-
-    undoTimerRef.current = setTimeout(() => {
-      setUndoVisible(false)
-      setTimeout(() => setUndoItem(null), 300)
-    }, 5000)
-  }
-
-  const handleUndo = () => {
-    if (!undoItem) return
-    if (undoTimerRef.current) clearTimeout(undoTimerRef.current)
-
+  // Instant restore — the session's data never left `items`, so Undo just
+  // un-hides it. NO refresh()/refetch, so no skeleton, no shake.
+  const handleUndoRemove = (item: SessionHistoryItem) => {
     addStoredSession({
-      sessionId: undoItem.sessionId,
-      participantId: undoItem.participantId,
-      role: undoItem.role,
-      sessionName: undoItem.sessionName,
-      joinedAt: undoItem.joinedAt,
+      sessionId: item.sessionId,
+      participantId: item.participantId,
+      role: item.role,
+      sessionName: item.sessionName,
+      joinedAt: item.joinedAt,
     })
 
     if (user) {
       addUserSession({
         userId: user.id,
-        sessionId: undoItem.sessionId,
-        participantId: undoItem.participantId,
-        role: undoItem.role,
-        joinedAt: undoItem.joinedAt,
+        sessionId: item.sessionId,
+        participantId: item.participantId,
+        role: item.role,
+        joinedAt: item.joinedAt,
       }).catch(() => {
         // best effort — local re-add already succeeded
       })
     }
 
-    setUndoVisible(false)
-    setTimeout(() => setUndoItem(null), 300)
+    setRemovedIds((prev) => {
+      const next = new Set(prev)
+      next.delete(item.sessionId)
+      return next
+    })
+
     setForceFirstTimer(false)
     setCleaningUp(false)
-    refresh()
+  }
+
+  const handleRemoved = (item: SessionHistoryItem) => {
+    setRemovedIds((prev) => {
+      const next = new Set(prev).add(item.sessionId)
+      const stillVisible = items.filter((i) => !i.isStale && !next.has(i.sessionId))
+      if (stillVisible.length === 0) {
+        setCleaningUp(true)
+        setTimeout(() => {
+          setCleaningUp(false)
+          setForceFirstTimer(true)
+        }, 600)
+      }
+      return next
+    })
+
+    showToast("Removed from your list", "info", {
+      action: { label: "Undo", onClick: () => handleUndoRemove(item) },
+      duration: 5000,
+    })
   }
 
   return (
     <>
-      <AppHeader />
+      <AppHeader onReload={refresh} />
 
-      {/* Undo bar */}
-      {undoItem && (
-        <div
-          className={`fixed top-[60px] left-0 right-0 z-40 flex justify-center px-4 transition-all duration-300 ${
-            undoVisible
-              ? "opacity-100 translate-y-0"
-              : "opacity-0 -translate-y-1 pointer-events-none"
-          }`}
-        >
-          <div className="max-w-md w-full mt-2">
-            <div className="bg-gray-900 text-white text-sm rounded-xl px-4 py-3 flex items-center justify-between shadow-lg">
-              <span>Removed from your list.</span>
-              <button
-                onClick={handleUndo}
-                className="ml-4 font-semibold text-yellow-300 hover:text-yellow-200 transition flex-shrink-0"
-              >
-                Undo
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <ToastContainer toasts={toasts} onDismiss={dismissToast} />
 
       {/* Auth toast */}
       {authToast && (
@@ -190,7 +190,7 @@ export default function HomePage() {
           >
             <div>
               <h1 className="text-2xl font-bold text-gray-900">Split Bill, No Drama</h1>
-              <p className="text-sm text-gray-500 mt-1">No login, no install, just share a link.</p>
+              <p className="text-sm text-gray-500 mt-1">No install, just share a link.</p>
             </div>
 
             <motion.div
@@ -207,15 +207,15 @@ export default function HomePage() {
             </motion.div>
 
             <SessionList
-              items={items}
+              items={visibleItems}
               loading={loading}
               storedCount={storedCount}
               onRemoved={handleRemoved}
-              onBecameEmpty={handleBecameEmpty}
               onRefresh={refresh}
+              onSeeAllClick={() => setShowSessionsOverlay(true)}
             />
 
-            {!isSignedIn && items.filter((i) => !i.isStale).length >= 2 && (
+            {!isSignedIn && visibleItems.filter((i) => !i.isStale).length >= 1 && (
               <SignInBanner onSignInClick={() => setShowSignInModal(true)} />
             )}
           </motion.div>
@@ -240,8 +240,8 @@ export default function HomePage() {
               <div className="space-y-3">
                 <h1 className="text-4xl font-bold text-gray-900">Split Bill, No Drama</h1>
                 <p className="text-gray-600">
-                  Split bills with friends without the headache. No login, no
-                  install, just share a link.
+                  Split bills with friends without the headache. No signup
+                  needed to start — just share a link.
                 </p>
               </div>
             )}
@@ -296,6 +296,19 @@ export default function HomePage() {
           <SignInModal
             key="signin-banner"
             onClose={() => setShowSignInModal(false)}
+            onSuccess={(msg) => showToast(msg, "success")}
+          />
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {showSessionsOverlay && (
+          <SessionsOverlay
+            key="sessions-overlay"
+            sessions={visibleItems.filter((i) => !i.isStale)}
+            loading={loading && storedCount > 0 && items.length === 0}
+            onClose={() => setShowSessionsOverlay(false)}
+            onRemoved={handleRemoved}
           />
         )}
       </AnimatePresence>

@@ -1,10 +1,11 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { Loader2, LogOut, RefreshCw } from "lucide-react"
+import { Check, Loader2, LogOut, RefreshCw } from "lucide-react"
 import { motion } from "framer-motion"
 import { useAuth } from "@/contexts/AuthContext"
 import { useToast } from "@/hooks/useToast"
+import { useUserSessions } from "@/hooks/useUserSessions"
 import { syncSessionsToAccount } from "@/lib/syncSessionsToAccount"
 import ToastContainer from "@/components/ui/ToastContainer"
 
@@ -13,17 +14,39 @@ type Props = {
   onSignedOut: () => void
 }
 
+const LAST_SYNCED_KEY = "splitto:last_synced_at"
+
+function relativeTime(iso: string): string {
+  const diffMs = Date.now() - new Date(iso).getTime()
+  const mins = Math.floor(diffMs / 60000)
+  if (mins < 1) return "just now"
+  if (mins < 60) return `${mins}m ago`
+  const hours = Math.floor(mins / 60)
+  if (hours < 24) return `${hours}h ago`
+  const days = Math.floor(hours / 24)
+  return `${days}d ago`
+}
+
 export default function ProfileMenu({ onClose, onSignedOut }: Props) {
   const { user, signOut } = useAuth()
   const { toasts, showToast, dismissToast } = useToast()
+  const { userSessions } = useUserSessions()
   const [signingOut, setSigningOut] = useState(false)
   const [syncing, setSyncing] = useState(false)
+  const [lastSyncedAt, setLastSyncedAt] = useState<string | null>(null)
+
+  useEffect(() => {
+    setLastSyncedAt(localStorage.getItem(LAST_SYNCED_KEY))
+  }, [])
 
   const handleSyncNow = async () => {
     if (!user) return
     setSyncing(true)
     try {
       const result = await syncSessionsToAccount(user.id)
+      const now = new Date().toISOString()
+      localStorage.setItem(LAST_SYNCED_KEY, now)
+      setLastSyncedAt(now)
       if (result.newlySynced > 0) {
         const label = result.newlySynced === 1 ? "session" : "sessions"
         showToast(`Synced ${result.newlySynced} new ${label}`, "success")
@@ -86,6 +109,13 @@ export default function ProfileMenu({ onClose, onSignedOut }: Props) {
                 {user?.email}
               </p>
               <p className="text-xs text-gray-400">Signed in</p>
+              <p className="text-xs text-green-600 flex items-center gap-1 mt-0.5">
+                <Check size={12} className="flex-shrink-0" />
+                {userSessions.length} {userSessions.length === 1 ? "session" : "sessions"} synced
+                {lastSyncedAt && (
+                  <span className="text-gray-400">· {relativeTime(lastSyncedAt)}</span>
+                )}
+              </p>
             </div>
           </div>
           <button

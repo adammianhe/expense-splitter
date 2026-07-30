@@ -11,6 +11,12 @@ function CallbackHandler() {
 
   useEffect(() => {
     const code = searchParams.get("code")
+    const type = searchParams.get("type")
+
+    if (type === "recovery") {
+      router.replace(`/auth/reset-password${code ? `?code=${code}` : ""}`)
+      return
+    }
 
     if (code) {
       supabase.auth

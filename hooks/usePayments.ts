@@ -42,50 +42,18 @@ export function usePayments(sessionId: string) {
     }
   }, [sessionId])
 
-  // Claim payment for specific items
+  // Claim a payment round for specific items. Each round is its own row —
+  // verify/unverify then act on that one round, not a cumulative total.
+  // `amount`/`paidItemIds`/etc are expected to be the DELTA (what's newly
+  // being paid for), computed by the caller from ParticipantBill.unpaid*.
   const claimPayment = async (
-  participantId: string,
-  amount: number,
-  method: "qr" | "cash",
-  paidItemIds: string[],
-  paidItemQuantities: Record<string, number>,
-  paidShareGroupIds: string[]
-) => {
-  // Check if payment record exists
-  const existing = payments.find((p) => p.participant_id === participantId)
-
-  if (existing) {
-    // Update existing - merge paid items, quantities, share groups, increase amount
-    const newItemIds = Array.from(
-      new Set([...(existing.paid_item_ids || []), ...paidItemIds])
-    )
-    const newQuantities = {
-      ...(existing.paid_item_quantities || {}),
-      ...paidItemQuantities,
-    }
-    const newShareGroupIds = Array.from(
-      new Set([
-        ...(existing.paid_share_group_ids || []),
-        ...paidShareGroupIds,
-      ])
-    )
-    const newAmount = Number(existing.amount_paid) + amount
-
-    const { error } = await supabase
-      .from("payments")
-      .update({
-        amount_paid: newAmount,
-        method,
-        paid_item_ids: newItemIds,
-        paid_item_quantities: newQuantities,
-        paid_share_group_ids: newShareGroupIds,
-        status: "claimed",
-      })
-      .eq("id", existing.id)
-
-    if (error) throw error
-  } else {
-    // Create new payment
+    participantId: string,
+    amount: number,
+    method: "qr" | "cash",
+    paidItemIds: string[],
+    paidItemQuantities: Record<string, number>,
+    paidShareGroupIds: string[]
+  ) => {
     const { error } = await supabase.from("payments").insert({
       session_id: sessionId,
       participant_id: participantId,
@@ -98,13 +66,11 @@ export function usePayments(sessionId: string) {
     })
 
     if (error) throw error
+    await loadPayments()
   }
 
-  await loadPayments()
-}
-
-  const getPayment = (participantId: string): Payment | null => {
-    return payments.find((p) => p.participant_id === participantId) || null
+  const getPayments = (participantId: string): Payment[] => {
+    return payments.filter((p) => p.participant_id === participantId)
   }
 
   // Verify a claimed payment (owner action)
@@ -114,6 +80,10 @@ export function usePayments(sessionId: string) {
       .update({ status: "verified" })
       .eq("id", paymentId)
     if (error) throw error
+    // Don't rely solely on the realtime echo to refresh local state — that
+    // depends on Supabase realtime round-trip timing. Reload immediately so
+    // the UI is consistent right after the write, same as claimPayment/etc.
+    await loadPayments()
   }
 
   // Unverify a payment (owner caught false claim)
@@ -123,33 +93,36 @@ export function usePayments(sessionId: string) {
       .update({ status: "unverified" })
       .eq("id", paymentId)
     if (error) throw error
+    await loadPayments()
   }
 
-  // Mark someone as paid in cash (owner action)
+  // Cancel an unverified payment (participant action — they reduced/removed
+  // a claim that round covered, so it's no longer a debt to repay). Kept in
+  // the DB for the owner's history view, but excluded everywhere else.
+  const cancelPayment = async (paymentId: string) => {
+    console.log("[CANCEL] Cancelling payment", paymentId)
+    const { error } = await supabase
+      .from("payments")
+      .update({ status: "cancelled" })
+      .eq("id", paymentId)
+
+    if (error) {
+      console.error("[CANCEL] Failed:", error)
+      throw error
+    }
+    console.log("[CANCEL] Success, payment", paymentId, "cancelled")
+    await loadPayments()
+  }
+
+  // Mark someone as paid in cash (owner action) — new verified round for
+  // the given delta amount/items.
   const markAsCash = async (
-  participantId: string,
-  amount: number,
-  paidItemIds: string[],
-  paidItemQuantities: Record<string, number>,
-  paidShareGroupIds: string[]
-) => {
-  const existing = payments.find((p) => p.participant_id === participantId)
-
-  if (existing) {
-    const { error } = await supabase
-      .from("payments")
-      .update({
-        amount_paid: amount,
-        paid_item_ids: paidItemIds,
-        paid_item_quantities: paidItemQuantities,
-        paid_share_group_ids: paidShareGroupIds,
-        status: "verified",
-        method: "cash",
-      })
-      .eq("id", existing.id)
-
-    if (error) throw error
-  } else {
+    participantId: string,
+    amount: number,
+    paidItemIds: string[],
+    paidItemQuantities: Record<string, number>,
+    paidShareGroupIds: string[]
+  ) => {
     const { error } = await supabase.from("payments").insert({
       session_id: sessionId,
       participant_id: participantId,
@@ -162,39 +135,18 @@ export function usePayments(sessionId: string) {
     })
 
     if (error) throw error
+    await loadPayments()
   }
 
-  await loadPayments()
-}
-
-  
-
-  // Owner confirms their own items - bypasses claim, goes straight to verified
+  // Owner confirms their own items - bypasses claim, goes straight to
+  // verified. New round for the given delta amount/items.
   const ownerConfirmPayment = async (
-  participantId: string,
-  amount: number,
-  paidItemIds: string[],
-  paidItemQuantities: Record<string, number>,
-  paidShareGroupIds: string[]
-) => {
-  const existing = payments.find((p) => p.participant_id === participantId)
-
-  if (existing) {
-    // Replace owner's data - they confirm whatever's currently ticked
-    const { error } = await supabase
-      .from("payments")
-      .update({
-        amount_paid: amount,
-        paid_item_ids: paidItemIds,
-        paid_item_quantities: paidItemQuantities,
-        paid_share_group_ids: paidShareGroupIds,
-        status: "verified",
-        method: "cash",
-      })
-      .eq("id", existing.id)
-
-    if (error) throw error
-  } else {
+    participantId: string,
+    amount: number,
+    paidItemIds: string[],
+    paidItemQuantities: Record<string, number>,
+    paidShareGroupIds: string[]
+  ) => {
     const { error } = await supabase.from("payments").insert({
       session_id: sessionId,
       participant_id: participantId,
@@ -207,18 +159,17 @@ export function usePayments(sessionId: string) {
     })
 
     if (error) throw error
+    await loadPayments()
   }
-
-  await loadPayments()
-}
 
   return {
     payments,
     loading,
     claimPayment,
-    getPayment,
+    getPayments,
     verifyPayment,
     unverifyPayment,
+    cancelPayment,
     markAsCash,
     ownerConfirmPayment,
   }

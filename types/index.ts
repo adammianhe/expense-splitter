@@ -78,13 +78,18 @@ export type ShareGroup = {
   }[]
 }
 
+export type PaymentStatus = 'claimed' | 'verified' | 'unverified' | 'cancelled'
+
+// One payment ROUND. A participant can have many of these — verify/unverify
+// act on a single round, not the participant's whole running total. Bill
+// math aggregates across all of a participant's payment rows by status.
 export type Payment = {
   id: string
   session_id: string
   participant_id: string
   amount_paid: number
-  status: 'unpaid' | 'claimed' | 'verified' | 'unverified'
-  method: 'qr' | 'cash' | null
+  status: PaymentStatus
+  method: 'qr' | 'cash' | 'manual' | null
   paid_item_ids: string[]
   paid_item_quantities: Record<string, number>
   paid_share_group_ids: string[]

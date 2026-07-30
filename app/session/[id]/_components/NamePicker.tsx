@@ -9,6 +9,7 @@ import { useAuth } from "@/contexts/AuthContext"
 import { addUserSession } from "@/lib/userSessionsApi"
 import { addToRetryQueue } from "@/lib/syncRetryQueue"
 import Button from "@/components/ui/Button"
+import posthog from "posthog-js"
 
 type Props = {
   sessionId: string
@@ -27,6 +28,16 @@ export default function NamePicker({ sessionId, sessionName, participants, onPic
     saveParticipantId(sessionId, participantId)
     const role = isOwner ? "owner" : "friend"
     const joinedAt = new Date().toISOString()
+    try {
+      if (typeof window !== "undefined") {
+        posthog.capture("session_joined", {
+          session_id: sessionId,
+          role,
+        })
+      }
+    } catch {
+      // best effort
+    }
     try {
       addStoredSession({
         sessionId,

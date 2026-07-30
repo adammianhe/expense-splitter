@@ -46,15 +46,15 @@ export default function Toast({ toast, onDismiss }: Props) {
   return (
     <div
       className={`transition-all duration-300 ${
-        visible ? "opacity-100 translate-y-0" : "opacity-0 -translate-y-2"
+        visible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-3"
       }`}
     >
       <div
-        className={`px-4 py-3 rounded-lg border shadow-sm text-sm font-medium flex items-center justify-between gap-3 ${
+        className={`px-4 py-3 rounded-lg border shadow-lg text-sm font-medium flex items-center justify-between gap-3 ${
           colors[toast.type || "info"]
         }`}
       >
-        <span>{toast.text}</span>
+        <span className="min-w-0">{toast.text}</span>
         {toast.action && (
           <button
             onClick={() => {
@@ -62,7 +62,7 @@ export default function Toast({ toast, onDismiss }: Props) {
               setVisible(false)
               setTimeout(() => onDismiss(toast.id), 300)
             }}
-            className="flex-shrink-0 text-sm font-semibold underline hover:no-underline"
+            className="flex-shrink-0 text-sm font-semibold underline hover:no-underline px-2 py-2.5 -my-2.5 -mr-2"
           >
             {toast.action.label}
           </button>

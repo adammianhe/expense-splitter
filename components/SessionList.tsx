@@ -1,48 +1,40 @@
 "use client"
 
 import Link from "next/link"
-import { useEffect, useRef, useState } from "react"
-import { AlertTriangle, Check, Clock, Info, RefreshCw, X } from "lucide-react"
-import { motion } from "framer-motion"
+import { useState } from "react"
+import { AlertTriangle, Check, ChevronRight, Clock, Info, RefreshCw, X } from "lucide-react"
+import { motion, AnimatePresence } from "framer-motion"
 import { SessionHistoryItem } from "@/hooks/useSessionHistory"
 import { removeStoredSession } from "@/lib/sessionHistory"
 import { removeUserSession } from "@/lib/userSessionsApi"
 import { useAuth } from "@/contexts/AuthContext"
 import { Skeleton } from "@/components/ui/Skeleton"
 import { getRelativeTime } from "@/lib/timeUtils"
+import { Tooltip } from "@/components/ui/Tooltip"
 
 type Props = {
   items: SessionHistoryItem[]
   loading: boolean
   storedCount: number
   onRemoved?: (item: SessionHistoryItem) => void
-  onBecameEmpty?: () => void
   onRefresh?: () => void
+  onSeeAllClick?: () => void
 }
+
+const MAX_VISIBLE = 5
 
 export default function SessionList({
   items,
   loading,
   storedCount,
   onRemoved,
-  onBecameEmpty,
   onRefresh,
+  onSeeAllClick,
 }: Props) {
   const { user } = useAuth()
   const [showStale, setShowStale] = useState(false)
-  const [removedIds, setRemovedIds] = useState(new Set<string>())
-  const [dismissingIds, setDismissingIds] = useState(new Set<string>())
   const [bannerDismissed, setBannerDismissed] = useState(false)
   const [refreshing, setRefreshing] = useState(false)
-  const removedIdsRef = useRef(new Set<string>())
-
-  // Reset local removal state when parent refreshes items
-  useEffect(() => {
-    removedIdsRef.current = new Set()
-    setRemovedIds(new Set())
-    setDismissingIds(new Set())
-    setBannerDismissed(false)
-  }, [items])
 
   const handleRefresh = () => {
     if (refreshing) return
@@ -51,51 +43,35 @@ export default function SessionList({
     setTimeout(() => setRefreshing(false), 800)
   }
 
-  const handleRemove = (e: React.MouseEvent, item: SessionHistoryItem, skipConfirm = false) => {
+  // Instant remove — no confirm dialog, no manual collapse choreography.
+  // Which sessions are visible is decided by the parent (it pre-filters
+  // `items` via a shared removedIds set), so this just fires the removal;
+  // AnimatePresence below plays the exit animation automatically once the
+  // item drops out of the mapped array on the next render.
+  const handleRemove = (e: React.MouseEvent, item: SessionHistoryItem) => {
     e.preventDefault()
 
-    if (
-      !skipConfirm &&
-      !window.confirm(
-        "Remove from your list? The session itself isn't deleted. You can still access it via the link."
+    removeStoredSession(item.sessionId)
+    if (user) {
+      removeUserSession({ userId: user.id, sessionId: item.sessionId }).catch(
+        () => {
+          // best effort — local removal already succeeded
+        }
       )
-    )
-      return
+    }
 
-    setDismissingIds((prev) => new Set(prev).add(item.sessionId))
-
-    setTimeout(() => {
-      removeStoredSession(item.sessionId)
-      if (user) {
-        removeUserSession({ userId: user.id, sessionId: item.sessionId }).catch(
-          () => {
-            // best effort — local removal already succeeded
-          }
-        )
-      }
-
-      const next = new Set(removedIdsRef.current).add(item.sessionId)
-      removedIdsRef.current = next
-      setRemovedIds(new Set(next))
-      setDismissingIds((prev) => {
-        const n = new Set(prev)
-        n.delete(item.sessionId)
-        return n
-      })
-
-      onRemoved?.(item)
-
-      const active = items.filter((i) => !i.isStale)
-      const stillVisible = active.filter((i) => !next.has(i.sessionId))
-      if (stillVisible.length === 0) onBecameEmpty?.()
-    }, 300)
+    onRemoved?.(item)
   }
 
   // ── Loading state ────────────────────────────────────────────────────────
   if (loading) {
     if (storedCount === 0) return null
 
-    const skeletonCount = Math.min(storedCount, 3)
+    // Capped at MAX_VISIBLE (not a smaller number) so the skeleton count
+    // matches the eventual real card count exactly — otherwise the list
+    // grows/shrinks in height the moment real data lands, which is its own
+    // layout-shift source independent of per-card sizing.
+    const skeletonCount = Math.min(storedCount, MAX_VISIBLE)
     return (
       <div>
         <div className="flex items-center justify-between mb-3">
@@ -105,12 +81,15 @@ export default function SessionList({
         {Array.from({ length: skeletonCount }).map((_, i) => (
           <div
             key={i}
-            className="bg-white border border-gray-200 rounded-xl p-4 space-y-2 mb-3"
+            className="bg-white border border-gray-200 rounded-xl p-4 pr-10 space-y-1.5 mb-3"
           >
-            <Skeleton className="h-4 w-3/5" />
-            <Skeleton className="h-3 w-16" />
+            {/* Heights match the real card's rendered line-heights exactly:
+                name (leading-tight, 16px text) -> 20px, time (text-xs) ->
+                16px, badge (text-xs + py-0.5) -> 20px, status (text-sm) -> 20px */}
+            <Skeleton className="h-5 w-3/5" />
+            <Skeleton className="h-4 w-16" />
             <Skeleton className="h-5 w-20 rounded-full" />
-            <Skeleton className="h-3 w-28" />
+            <Skeleton className="h-5 w-28" />
           </div>
         ))}
       </div>
@@ -119,7 +98,7 @@ export default function SessionList({
 
   const active = items.filter((i) => !i.isStale)
   const stale = items.filter((i) => i.isStale)
-  const visibleActive = active.filter((i) => !removedIds.has(i.sessionId))
+  const visibleActive = active
   const hasErrors = visibleActive.some((i) => i.fetchError)
 
   if (visibleActive.length === 0 && stale.length === 0) return null
@@ -150,35 +129,32 @@ export default function SessionList({
             <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">
               Your Sessions
             </p>
-            <button
-              onClick={handleRefresh}
-              disabled={refreshing}
-              aria-label="Refresh"
-              className="p-1 text-gray-400 hover:text-gray-600 transition disabled:opacity-50"
-            >
-              <RefreshCw
-                size={14}
-                className={refreshing ? "animate-spin" : ""}
-              />
-            </button>
+            <Tooltip content="Refresh sessions">
+              <button
+                onClick={handleRefresh}
+                disabled={refreshing}
+                aria-label="Refresh"
+                className="p-1 text-gray-400 hover:text-gray-600 transition disabled:opacity-50"
+              >
+                <RefreshCw
+                  size={14}
+                  className={refreshing ? "animate-spin" : ""}
+                />
+              </button>
+            </Tooltip>
           </div>
 
-          {active
-            .filter((i) => !removedIds.has(i.sessionId))
-            .map((item, index) => {
-              const dismissing = dismissingIds.has(item.sessionId)
-              return (
-                <motion.div
-                  key={item.sessionId}
-                  initial={{ opacity: 0, y: 12 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.35, delay: index * 0.05 }}
-                  className={`transition-all duration-300 ease-out overflow-hidden ${
-                    dismissing
-                      ? "opacity-0 scale-95 max-h-0 pb-0"
-                      : "opacity-100 max-h-[300px] pb-3"
-                  }`}
-                >
+          <AnimatePresence mode="popLayout">
+            {active.slice(0, MAX_VISIBLE).map((item, index) => (
+              <motion.div
+                key={item.sessionId}
+                layout
+                initial={{ opacity: 0, y: 12, marginBottom: 12 }}
+                animate={{ opacity: 1, y: 0, marginBottom: 12 }}
+                exit={{ opacity: 0, height: 0, marginBottom: 0 }}
+                transition={{ duration: 0.25, ease: "easeOut", delay: index * 0.03 }}
+                className="overflow-hidden"
+              >
                   <div className="relative">
                     <Link
                       href={`/session/${item.sessionId}`}
@@ -186,7 +162,6 @@ export default function SessionList({
                     >
                     <motion.div
                       whileTap={{ scale: 0.97 }}
-                      whileHover={{ scale: 1.01 }}
                       transition={{ type: "spring", stiffness: 400, damping: 20 }}
                       className={`border rounded-xl p-4 space-y-1.5 pr-10 cursor-pointer
                         shadow-sm hover:shadow-md transition-shadow duration-200
@@ -249,32 +224,45 @@ export default function SessionList({
                     </motion.div>
                     </Link>
 
-                    <motion.button
-                      type="button"
-                      whileTap={{ scale: 0.9 }}
-                      onClick={(e) => handleRemove(e, item)}
-                      aria-label="Remove session"
-                      className="absolute top-0 right-0 p-2 text-gray-400 hover:text-red-500 transition z-10"
-                    >
-                      <X size={16} />
-                    </motion.button>
+                    <div className="absolute top-0 right-0 z-10">
+                      <Tooltip content="Remove from list">
+                        <motion.button
+                          type="button"
+                          whileTap={{ scale: 0.9 }}
+                          onClick={(e) => handleRemove(e, item)}
+                          aria-label="Remove session"
+                          className="p-2 text-gray-400 hover:text-red-500 transition"
+                        >
+                          <X size={16} />
+                        </motion.button>
+                      </Tooltip>
+                    </div>
                   </div>
-                </motion.div>
-              )
-            })}
+              </motion.div>
+            ))}
+          </AnimatePresence>
+
+          <button
+            type="button"
+            onClick={onSeeAllClick}
+            className="w-full flex items-center justify-center gap-1 py-2.5 text-sm font-medium text-gray-500 hover:text-gray-800 hover:bg-gray-50 rounded-xl transition"
+          >
+            See all sessions ({visibleActive.length})
+            <ChevronRight size={14} />
+          </button>
         </>
       )}
 
       {/* Stale sessions */}
-      {stale.filter((i) => !removedIds.has(i.sessionId)).length > 0 && (
+      {stale.length > 0 && (
         <div className="mt-4">
           <button
             onClick={() => setShowStale(!showStale)}
             className="text-xs text-gray-500 hover:text-gray-700 transition"
           >
             {showStale ? "Hide" : "Show"}{" "}
-            {stale.filter((i) => !removedIds.has(i.sessionId)).length} unavailable{" "}
-            {stale.filter((i) => !removedIds.has(i.sessionId)).length === 1
+            {stale.length} unavailable{" "}
+            {stale.length === 1
               ? "session"
               : "sessions"}
           </button>
@@ -282,7 +270,6 @@ export default function SessionList({
           {showStale && (
             <div className="mt-2 space-y-2">
               {stale
-                .filter((i) => !removedIds.has(i.sessionId))
                 .map((item) => (
                   <div
                     key={item.sessionId}
@@ -296,13 +283,15 @@ export default function SessionList({
                         Session no longer available
                       </p>
                     </div>
-                    <button
-                      onClick={(e) => handleRemove(e, item, true)}
-                      aria-label="Remove session"
-                      className="text-gray-400 hover:text-red-500 p-2"
-                    >
-                      <X size={16} />
-                    </button>
+                    <Tooltip content="Remove from list">
+                      <button
+                        onClick={(e) => handleRemove(e, item)}
+                        aria-label="Remove session"
+                        className="text-gray-400 hover:text-red-500 p-2"
+                      >
+                        <X size={16} />
+                      </button>
+                    </Tooltip>
                   </div>
                 ))}
             </div>

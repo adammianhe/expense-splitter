@@ -6,6 +6,7 @@ import { ChargeLine, formatChargeLabel } from "@/lib/utils"
 import Button from "@/components/ui/Button"
 import { QrCode, Banknote, AlertTriangle, Check } from "lucide-react"
 import Spinner from "@/components/ui/Spinner"
+import posthog from "posthog-js"
 
 type Props = {
   session: Session
@@ -40,6 +41,17 @@ export default function PaymentModal({
     setLoading(true)
     try {
       await onConfirm(method)
+      try {
+        if (typeof window !== "undefined") {
+          posthog.capture("payment_made", {
+            session_id: session.id,
+            method,
+            amount,
+          })
+        }
+      } catch {
+        // best effort
+      }
       onClose()
     } catch (err: any) {
       alert("Error: " + err.message)

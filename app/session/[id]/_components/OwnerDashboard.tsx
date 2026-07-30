@@ -3,7 +3,7 @@
 import { useState } from "react"
 import { Session, Participant, Item } from "@/types"
 import { ParticipantBill } from "@/hooks/useSessionBills"
-import { calculateBillWithCharges, resolveCharges, formatChargeLabel, roundToTwoDecimals, formatRelativeDate } from "@/lib/utils"
+import { formatChargeLabel, formatRelativeDate } from "@/lib/utils"
 import Button from "@/components/ui/Button"
 import ItemsEditor from "./ItemsEditor"
 import SharePickerModal from "./SharePickerModal"
@@ -11,6 +11,7 @@ import ReceiptManager from "./ReceiptManager"
 import PaymentMethodsManager from "./PaymentMethodsManager"
 import { Link2, Pencil, Banknote, Bell, Lock, AlertTriangle, Camera, Share2, Plus, X, Check } from "lucide-react"
 import Spinner from "@/components/ui/Spinner"
+import posthog from "posthog-js"
 
 type Props = {
   receipts: import("@/types").Receipt[]
@@ -112,14 +113,14 @@ export default function OwnerDashboard({
   const [processingParticipant, setProcessingParticipant] = useState(false)
   const [shareItem, setShareItem] = useState<Item | null>(null)
 
-  // Owner's bill data
+  // Owner's bill data — all payment/delta math for a participant lives in
+  // useSessionBills (aggregated across that participant's payment rounds),
+  // so both the owner's own confirm flow and Mark-as-Paid below share the
+  // same computation instead of each re-deriving it (which is how the
+  // last multi-round bug slipped in).
   const myBill = bills.find((b) => b.participant.id === participant.id)
-  const myPayment = myBill?.payment
-  const paidItemQuantities: Record<string, number> =
-    (myPayment as any)?.paid_item_quantities || {}
-  const paidShareGroupIds = new Set<string>(
-    (myPayment as any)?.paid_share_group_ids || []
-  )
+  const paidItemQuantities: Record<string, number> = myBill?.paidItemQuantities || {}
+  const paidShareGroupIds = myBill?.paidShareGroupIds || new Set<string>()
 
   const mySolo = (itemId: string): number => soloQty.get(itemId) || 0
   const myPaidQty = (itemId: string): number => paidItemQuantities[itemId] || 0
@@ -210,7 +211,7 @@ export default function OwnerDashboard({
   }
 
   // ============================================
-  // PAYMENT CALCULATION (delta model)
+  // PAYMENT CALCULATION (delta model — see useSessionBills)
   // ============================================
 
   const itemsWithMyPendingShares = new Set(
@@ -223,109 +224,36 @@ export default function OwnerDashboard({
       .map((i) => i.id)
   )
 
-  // New unpaid stuff to confirm
-  const unpaidSoloItems: { item: Item; deltaQty: number; deltaAmount: number }[] = []
-  items.forEach((item) => {
-    if (itemsWithMyPendingShares.has(item.id)) return
-    const totalSolo = mySolo(item.id)
-    const paidSolo = myPaidQty(item.id)
-    const deltaQty = totalSolo - paidSolo
-    if (deltaQty > 0) {
-      unpaidSoloItems.push({
-        item,
-        deltaQty,
-        deltaAmount: deltaQty * Number(item.price),
-      })
-    }
-  })
-
-  // Unpaid confirmed shares
-  const unpaidShareInfo: { total: number; paidGroupIds: string[] } = (() => {
-    let total = 0
-    const newlyPaidGroupIds: string[] = []
-    items.forEach((item) => {
-      const shares = getItemShareGroups(item.id).filter(
-        (g) => g.isMine && g.allConfirmed && !g.isPaid
-      )
-      for (const g of shares) {
-        total += (g.quantity * Number(item.price)) / g.members.length
-        newlyPaidGroupIds.push(g.groupId)
-      }
-    })
-    return { total, paidGroupIds: newlyPaidGroupIds }
-  })()
-
-  const newUnpaidSubtotal =
-    unpaidSoloItems.reduce((sum, x) => sum + x.deltaAmount, 0) +
-    unpaidShareInfo.total
-
-  const totalSessionSubtotal = items.reduce((sum, item) => {
-    const claimed = getTotalClaimed(item.id)
-    const effective = Math.min(claimed, item.quantity)
-    return sum + Number(item.price) * effective
-  }, 0)
-
-  const appliedCharges = resolveCharges(session, charges)
-  const newBill = calculateBillWithCharges(
-    newUnpaidSubtotal,
-    totalSessionSubtotal,
-    appliedCharges
-  )
-  const newTotalToConfirm = roundToTwoDecimals(newBill.total)
+  const newTotalToConfirm = myBill?.unpaidTotal || 0
 
   const payerNames: Record<string, string[]> = {}
   items.forEach((item) => {
     const payers = bills
       .filter((b) => {
-        const paidIds = b.payment?.paid_item_ids || []
-        return paidIds.includes(item.id) && (b.isVerified || b.isClaimed)
+        const paidIds = new Set<string>()
+        for (const pay of [...b.claimedPayments, ...b.verifiedPayments]) {
+          for (const id of pay.paid_item_ids || []) paidIds.add(id)
+        }
+        return paidIds.has(item.id)
       })
       .map((b) => b.participant.name)
     payerNames[item.id] = payers
   })
 
   // ============================================
-  // CONFIRM HANDLER
+  // CONFIRM HANDLER — owner confirming their own ticked items
   // ============================================
 
   const handleConfirm = async () => {
+    if (!myBill) return
     setConfirming(true)
     try {
-      // Build new quantities map (paid + new deltas)
-      const newQuantities: Record<string, number> = { ...paidItemQuantities }
-      const newItemIds: string[] = [
-        ...((myPayment as any)?.paid_item_ids || []),
-      ]
-
-      unpaidSoloItems.forEach(({ item, deltaQty }) => {
-        newQuantities[item.id] = (newQuantities[item.id] || 0) + deltaQty
-        if (!newItemIds.includes(item.id)) newItemIds.push(item.id)
-      })
-
-      unpaidShareInfo.paidGroupIds.forEach((groupId) => {
-        const member = allAssignments.find(
-          (a) =>
-            a.share_group_id === groupId && a.participant_id === participant.id
-        )
-        if (member && !newItemIds.includes(member.item_id)) {
-          newItemIds.push(member.item_id)
-        }
-      })
-
-      const newShareGroupIds = [
-        ...Array.from(paidShareGroupIds),
-        ...unpaidShareInfo.paidGroupIds,
-      ]
-
-      // Build total amount (previously paid + new delta)
-      const newAmount = Number(myPayment?.amount_paid || 0) + newTotalToConfirm
-
       await onOwnerConfirm(
         participant.id,
-        newAmount,
-        newItemIds,
-        newQuantities,
-        newShareGroupIds
+        myBill.unpaidTotal,
+        myBill.unpaidItemIds,
+        myBill.unpaidItemQuantities,
+        myBill.unpaidShareGroupIds
       )
     } catch (err: any) {
       alert("Error: " + err.message)
@@ -393,56 +321,20 @@ export default function OwnerDashboard({
   }
 
   const handleMarkAsCash = async (bill: ParticipantBill) => {
-    if (!confirm(`Mark ${bill.participant.name} as paid cash RM ${bill.total.toFixed(2)}?`)) return
+    if (
+      !confirm(
+        `Mark ${bill.participant.name} as paid for RM ${bill.unpaidTotal.toFixed(2)}? This confirms they've paid the full remaining amount.`
+      )
+    )
+      return
     setProcessingId(bill.participant.id)
     try {
-      // For "mark as cash", treat their full claim as paid
-      const fullQuantities: Record<string, number> = {}
-      const fullItemIds: string[] = []
-      const fullShareGroupIds: string[] = []
-
-      items.forEach((item) => {
-        const solo = allAssignments.find(
-          (a) =>
-            a.item_id === item.id &&
-            a.participant_id === bill.participant.id &&
-            a.share_group_id === null &&
-            a.status !== "rejected"
-        )
-        if (solo) {
-          fullQuantities[item.id] = Number(solo.quantity)
-          fullItemIds.push(item.id)
-        }
-      })
-
-      const myShareRows = allAssignments.filter(
-        (a) =>
-          a.participant_id === bill.participant.id &&
-          a.share_group_id !== null &&
-          a.status === "confirmed"
-      )
-      myShareRows.forEach((row) => {
-        // Check if group is fully confirmed
-        const members = allAssignments.filter(
-          (a) => a.share_group_id === row.share_group_id
-        )
-        const allConfirmed = members.every((m) => m.status === "confirmed")
-        if (allConfirmed) {
-          if (!fullShareGroupIds.includes(row.share_group_id)) {
-            fullShareGroupIds.push(row.share_group_id)
-          }
-          if (!fullItemIds.includes(row.item_id)) {
-            fullItemIds.push(row.item_id)
-          }
-        }
-      })
-
       await onMarkAsCash(
         bill.participant.id,
-        bill.total,
-        fullItemIds,
-        fullQuantities,
-        fullShareGroupIds
+        bill.unpaidTotal,
+        bill.unpaidItemIds,
+        bill.unpaidItemQuantities,
+        bill.unpaidShareGroupIds
       )
     } catch (err: any) {
       alert("Error: " + err.message)
@@ -451,10 +343,20 @@ export default function OwnerDashboard({
     }
   }
 
-  const handleVerify = async (paymentId: string) => {
+  const handleVerify = async (paymentId: string, participantId: string) => {
     setProcessingId(paymentId)
     try {
       await onVerify(paymentId)
+      try {
+        if (typeof window !== "undefined") {
+          posthog.capture("payment_verified", {
+            session_id: session.id,
+            participant_id: participantId,
+          })
+        }
+      } catch {
+        // best effort
+      }
     } catch (err: any) {
       alert("Error: " + err.message)
     } finally {
@@ -464,6 +366,21 @@ export default function OwnerDashboard({
 
   const handleUnverify = async (paymentId: string) => {
     if (!confirm("Mark this payment as unverified? The person will be notified.")) return
+    setProcessingId(paymentId)
+    try {
+      await onUnverify(paymentId)
+    } catch (err: any) {
+      alert("Error: " + err.message)
+    } finally {
+      setProcessingId(null)
+    }
+  }
+
+  // Reject a still-claimed (unverified-by-owner) round — same DB action as
+  // Unverify (status -> unverified), different copy since nothing was ever
+  // confirmed here.
+  const handleReject = async (paymentId: string) => {
+    if (!confirm("Reject this payment? The person will need to pay again.")) return
     setProcessingId(paymentId)
     try {
       await onUnverify(paymentId)
@@ -511,27 +428,54 @@ export default function OwnerDashboard({
       return { text: "Owner: has unconfirmed items", color: "bg-orange-100 text-orange-800" }
     }
     if (!bill.hasTicked) {
-  return { text: "Hasn't ticked yet", color: "bg-gray-100 text-gray-600" }
-}
-    if (bill.hasPendingShares && !bill.payment) {
+      return { text: "Hasn't ticked yet", color: "bg-gray-100 text-gray-600" }
+    }
+    if (bill.hasPendingShares && bill.payments.length === 0) {
       return { text: "⏳ Has pending shares", color: "bg-yellow-100 text-yellow-800" }
     }
-    if (!bill.payment) {
+
+    // Aggregate status across ALL payment rounds — a round being unverified
+    // no longer wipes out earlier verified rounds.
+    const { verifiedAmount, pendingAmount, unverifiedAmount, amountOwed } = bill
+
+    if (verifiedAmount === 0 && pendingAmount === 0 && unverifiedAmount === 0) {
       return { text: "Ticked, not paid yet", color: "bg-orange-100 text-orange-800" }
     }
-    if (bill.isVerified && bill.amountOwed === 0) {
+    // bill.isUnverified is true only when the MOST RECENT round is
+    // unverified AND money is still owed — stale unverified history that's
+    // since been paid back, or fresh debt from newly ticked items, doesn't
+    // count (see useSessionBills).
+    if (bill.isUnverified) {
+      return {
+        text: `❌ RM ${bill.unpaidTotal.toFixed(2)} unverified`,
+        color: "bg-red-100 text-red-800",
+      }
+    }
+    if (pendingAmount > 0 && amountOwed === 0) {
+      return { text: "⏳ Waiting for verification", color: "bg-yellow-100 text-yellow-800" }
+    }
+    if (verifiedAmount > 0 && pendingAmount === 0 && amountOwed === 0) {
       return { text: "✅ Paid in full", color: "bg-green-100 text-green-800" }
     }
-    if (bill.isVerified && bill.amountOwed > 0) {
+    if (verifiedAmount > 0 && (pendingAmount > 0 || amountOwed > 0)) {
       return { text: "Partially paid", color: "bg-blue-100 text-blue-800" }
     }
-    if (bill.isClaimed) {
-      return { text: "⏳ Pending verification", color: "bg-yellow-100 text-yellow-800" }
-    }
-    if (bill.isUnverified) {
-      return { text: "❌ Payment unverified", color: "bg-red-100 text-red-800" }
-    }
     return { text: "👻 Not paid yet", color: "bg-gray-100 text-gray-600" }
+  }
+
+  const getPaymentRowStatus = (
+    status: "claimed" | "verified" | "unverified" | "cancelled"
+  ) => {
+    switch (status) {
+      case "verified":
+        return { icon: "✅", label: "verified" }
+      case "claimed":
+        return { icon: "⏳", label: "pending" }
+      case "unverified":
+        return { icon: "❌", label: "unverified" }
+      case "cancelled":
+        return { icon: "⊘", label: "cancelled" }
+    }
   }
 
   return (
@@ -844,7 +788,7 @@ export default function OwnerDashboard({
           )}
 
           {/* New unconfirmed bill */}
-          {newUnpaidSubtotal > 0 && (
+          {newTotalToConfirm > 0 && myBill && (
             <div className="border-t border-gray-100 pt-3 space-y-2">
               <div className="text-xs text-gray-500 font-medium">
                 NEW TO CONFIRM
@@ -852,10 +796,10 @@ export default function OwnerDashboard({
               <div className="flex justify-between text-sm">
                 <span className="text-gray-600">Subtotal</span>
                 <span className="font-medium text-gray-900">
-                  RM {newBill.subtotal.toFixed(2)}
+                  RM {myBill.unpaidSubtotal.toFixed(2)}
                 </span>
               </div>
-              {newBill.chargeLines.map((line, i) => (
+              {myBill.unpaidChargeLines.map((line, i) => (
                 <div key={i} className="flex justify-between text-sm">
                   <span className="text-gray-600">{formatChargeLabel(line)}</span>
                   <span className="font-medium text-gray-900">
@@ -889,9 +833,9 @@ export default function OwnerDashboard({
           )}
 
           {/* Already confirmed summary */}
-          {myPayment && Number(myPayment.amount_paid) > 0 && newUnpaidSubtotal === 0 && (
+          {myBill && myBill.verifiedAmount > 0 && newTotalToConfirm === 0 && (
             <div className="bg-green-50 border border-green-200 rounded-lg p-2 text-xs text-green-800 text-center">
-              ✓ All confirmed - RM {Number(myPayment.amount_paid).toFixed(2)}
+              ✓ All confirmed - RM {myBill.verifiedAmount.toFixed(2)}
             </div>
           )}
         </div>
@@ -965,7 +909,7 @@ export default function OwnerDashboard({
               const isOwner = bill.participant.is_owner
               const isProcessing =
                 processingId === bill.participant.id ||
-                processingId === bill.payment?.id
+                bill.payments.some((pay) => pay.id === processingId)
               const canDelete =
                 !isOwner && canDeleteParticipant(bill.participant.id, allAssignments)
 
@@ -1009,43 +953,64 @@ export default function OwnerDashboard({
                     </div>
                   </div>
 
-                  {!isOwner && bill.total > 0 && (
+                  {!isOwner && bill.payments.length > 0 && (
+                    <div className="pt-2 border-t border-gray-100 space-y-1.5">
+                      {bill.payments.map((pay) => {
+                        const rowStatus = getPaymentRowStatus(pay.status)
+                        return (
+                          <div
+                            key={pay.id}
+                            className="flex items-center justify-between gap-2 text-xs"
+                          >
+                            <span
+                              className={`flex-1 min-w-0 truncate ${
+                                pay.status === "cancelled"
+                                  ? "text-gray-400 italic"
+                                  : "text-gray-600"
+                              }`}
+                            >
+                              {rowStatus.icon} RM {Number(pay.amount_paid).toFixed(2)} ·{" "}
+                              {rowStatus.label} · {pay.method || "—"} ·{" "}
+                              {formatRelativeDate(pay.created_at)}
+                            </span>
+                            <div className="flex gap-1 flex-shrink-0">
+                              {pay.status === "claimed" && (
+                                <>
+                                  <button
+                                    onClick={() => handleVerify(pay.id, bill.participant.id)}
+                                    disabled={isProcessing}
+                                    className="px-2 py-1 rounded bg-green-600 text-white text-xs disabled:opacity-50"
+                                  >
+                                    Verify
+                                  </button>
+                                  <button
+                                    onClick={() => handleReject(pay.id)}
+                                    disabled={isProcessing}
+                                    className="px-2 py-1 rounded bg-red-600 text-white text-xs disabled:opacity-50"
+                                  >
+                                    Reject
+                                  </button>
+                                </>
+                              )}
+                              {pay.status === "verified" && (
+                                <button
+                                  onClick={() => handleUnverify(pay.id)}
+                                  disabled={isProcessing}
+                                  className="px-2 py-1 rounded bg-gray-200 text-gray-700 text-xs disabled:opacity-50"
+                                >
+                                  Unverify
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  )}
+
+                  {!isOwner && bill.amountOwed > 0 && (
                     <div className="flex gap-2 pt-2 border-t border-gray-100">
-                      {bill.isClaimed && bill.payment && (
-                        <>
-                          <Button
-                            variant="primary"
-                            onClick={() => handleVerify(bill.payment!.id)}
-                            disabled={isProcessing}
-                            className="flex-1 text-xs py-2"
-                          >
-                            ✓ Verify
-                          </Button>
-                          <Button
-                            variant="danger"
-                            onClick={() => handleUnverify(bill.payment!.id)}
-                            disabled={isProcessing}
-                            className="flex-1 text-xs py-2"
-                          >
-                            ✗ Unverify
-                          </Button>
-                        </>
-                      )}
-
-                      {bill.isVerified && bill.amountOwed === 0 && bill.payment && (
-                        <Button
-                          variant="ghost"
-                          onClick={() => handleUnverify(bill.payment!.id)}
-                          disabled={isProcessing}
-                          className="flex-1 text-xs py-2"
-                        >
-                          Undo Verify
-                        </Button>
-                      )}
-
-                      {bill.amountOwed > 0 && !bill.isClaimed && (
-                        <>
-                          <Button
+                      <Button
   variant="secondary"
   onClick={() => handleMarkAsCash(bill)}
   disabled={isProcessing}
@@ -1053,10 +1018,10 @@ export default function OwnerDashboard({
 >
   <span className="flex items-center justify-center gap-1.5">
     <Banknote size={14} />
-    Mark Cash
+    Mark as Paid
   </span>
 </Button>
-                          <Button
+                      <Button
   variant="ghost"
   onClick={() =>
     handleNudge(bill.participant.name, bill.amountOwed)
@@ -1068,8 +1033,6 @@ export default function OwnerDashboard({
     Nudge
   </span>
 </Button>
-                        </>
-                      )}
                     </div>
                   )}
                 </div>

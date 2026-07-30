@@ -4,6 +4,7 @@ export type StoredSession = {
   role: "owner" | "friend"
   sessionName: string
   joinedAt: string
+  lastVisitedAt?: string
 }
 
 const KEY = "splitto:sessions"
@@ -26,7 +27,25 @@ export function addStoredSession(session: StoredSession): void {
   if (typeof window === "undefined") return
   try {
     const existing = readRaw().filter((s) => s.sessionId !== session.sessionId)
-    const updated = [session, ...existing].slice(0, MAX)
+    const withVisited: StoredSession = {
+      ...session,
+      lastVisitedAt: session.lastVisitedAt || session.joinedAt,
+    }
+    const updated = [withVisited, ...existing].slice(0, MAX)
+    localStorage.setItem(KEY, JSON.stringify(updated))
+  } catch {
+    // best effort
+  }
+}
+
+export function updateLastVisited(sessionId: string): void {
+  if (typeof window === "undefined") return
+  try {
+    const updated = readRaw().map((s) =>
+      s.sessionId === sessionId
+        ? { ...s, lastVisitedAt: new Date().toISOString() }
+        : s
+    )
     localStorage.setItem(KEY, JSON.stringify(updated))
   } catch {
     // best effort

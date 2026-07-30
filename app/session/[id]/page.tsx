@@ -9,6 +9,7 @@ import { useSessionEditor } from "@/hooks/useSessionEditor"
 import { useToast } from "@/hooks/useToast"
 import { useChangeNotifications } from "@/hooks/useChangeNotifications"
 import { getParticipantId, clearParticipantId } from "@/lib/utils"
+import { updateLastVisited } from "@/lib/sessionHistory"
 import NamePicker from "./_components/NamePicker"
 import ItemTicker from "./_components/ItemTicker"
 import OwnerDashboard from "./_components/OwnerDashboard"
@@ -40,6 +41,10 @@ export default function SessionPage({ params }: { params: Promise<{ id: string }
     window.scrollTo(0, 0)
   }, [])
 
+  useEffect(() => {
+    updateLastVisited(sessionId)
+  }, [sessionId])
+
   // Toast system
   const { toasts, showToast, dismissToast } = useToast()
 
@@ -62,9 +67,9 @@ const {
   const {
     payments,
     claimPayment,
-    getPayment,
     verifyPayment,
     unverifyPayment,
+    cancelPayment,
     markAsCash,
     ownerConfirmPayment,
   } = usePayments(sessionId)
@@ -264,7 +269,7 @@ charges={charges}
       items={data.items}
       soloQty={soloQty}
       allAssignments={allAssignments}
-      myPayment={getPayment(currentParticipant.id)}
+      bill={bills.find((b) => b.participant.id === currentParticipant.id) || null}
       lockedItemIds={lockedItemIds}
       onIncrement={incrementSolo}
       onDecrement={decrementSolo}
@@ -272,6 +277,7 @@ charges={charges}
       onConfirmShare={confirmShare}
       onRejectShare={rejectShare}
       onRemoveShare={removeShare}
+      onCancelPayment={cancelPayment}
       onSwitchName={() => {
         clearParticipantId(sessionId)
         setParticipantId(null)

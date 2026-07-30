@@ -1,8 +1,9 @@
 "use client"
 
 import { useState } from "react"
-import { Item, Participant, Session, Payment } from "@/types"
-import { calculateBillWithCharges, resolveCharges, formatChargeLabel, roundToTwoDecimals } from "@/lib/utils"
+import { Item, Participant, Session } from "@/types"
+import { formatChargeLabel } from "@/lib/utils"
+import { ParticipantBill } from "@/hooks/useSessionBills"
 import Button from "@/components/ui/Button"
 import PaymentModal from "./PaymentModal"
 import SharePickerModal from "./SharePickerModal"
@@ -19,7 +20,7 @@ type Props = {
   items: Item[]
   soloQty: Map<string, number>
   allAssignments: any[]
-  myPayment: Payment | null
+  bill: ParticipantBill | null
   lockedItemIds: Set<string>
   onIncrement: (itemId: string) => void
   onDecrement: (itemId: string) => void
@@ -27,6 +28,7 @@ type Props = {
   onConfirmShare: (shareGroupId: string) => Promise<void>
   onRejectShare: (shareGroupId: string) => Promise<void>
   onRemoveShare: (shareGroupId: string) => Promise<void>
+  onCancelPayment: (paymentId: string) => Promise<void>
   onSwitchName: () => void
   onClaimPayment: (
     amount: number,
@@ -44,7 +46,7 @@ export default function ItemTicker({
   items,
   soloQty,
   allAssignments,
-  myPayment,
+  bill,
   lockedItemIds,
   onIncrement,
   onDecrement,
@@ -52,6 +54,7 @@ export default function ItemTicker({
   onConfirmShare,
   onRejectShare,
   onRemoveShare,
+  onCancelPayment,
   onSwitchName,
   onClaimPayment,
   receipts,
@@ -61,19 +64,74 @@ export default function ItemTicker({
   const [showPayment, setShowPayment] = useState(false)
   const [shareItem, setShareItem] = useState<Item | null>(null)
 
-  // Paid quantities per item (e.g. paid for 2 ayam)
-  const paidItemQuantities: Record<string, number> =
-    (myPayment as any)?.paid_item_quantities || {}
-  // Paid share group IDs
-  const paidShareGroupIds = new Set<string>(
-    (myPayment as any)?.paid_share_group_ids || []
-  )
+  // Paid quantities/shares are aggregated across ALL of this participant's
+  // payment rounds (verified + claimed only — unverified/cancelled rounds
+  // don't count) by useSessionBills. This IS the lock: the [-] button below
+  // is disabled once `mine <= paid`, so an item stays locked for as long as
+  // a verified or still-pending (claimed) round covers it. Unverifying a
+  // round drops it out of this aggregate, releasing the lock immediately.
+  const paidItemQuantities = bill?.paidItemQuantities || {}
+  const paidShareGroupIds = bill?.paidShareGroupIds || new Set<string>()
+  const unverifiedPayments = bill?.unverifiedPayments || []
 
   const mySolo = (itemId: string): number => soloQty.get(itemId) || 0
   const myPaidQty = (itemId: string): number => paidItemQuantities[itemId] || 0
 
+  // Once unlocked (round unverified), reducing/removing a claim that round
+  // covered means the participant is walking away from that debt — cancel
+  // the unverified round so it stops being "history user needs to resolve".
+  const cancelUnverifiedForItem = (itemId: string) => {
+    console.log("[CANCEL CHECK] Unverified payments:", unverifiedPayments.length)
+    const affected = unverifiedPayments.filter(
+      (pay) => (pay.paid_item_quantities || {})[itemId] !== undefined
+    )
+    unverifiedPayments.forEach((pay) => {
+      console.log(
+        "[CANCEL CHECK] Payment",
+        pay.id,
+        "has item",
+        itemId,
+        ":",
+        (pay.paid_item_quantities || {})[itemId] !== undefined
+      )
+    })
+    affected.forEach((pay) => {
+      onCancelPayment(pay.id).catch((err) => {
+        console.error("[CANCEL] Failed:", err)
+      })
+    })
+  }
+
+  const cancelUnverifiedForShareGroup = (groupId: string) => {
+    unverifiedPayments
+      .filter((pay) => (pay.paid_share_group_ids || []).includes(groupId))
+      .forEach((pay) => {
+        onCancelPayment(pay.id).catch((err) => {
+          console.error("[CANCEL] Failed:", err)
+        })
+      })
+  }
+
+  const handleDecrement = (itemId: string) => {
+    cancelUnverifiedForItem(itemId)
+    onDecrement(itemId)
+  }
+
+  const handleRemoveShareGroup = (groupId: string) => {
+    if (!confirm("Remove this share?")) return
+    cancelUnverifiedForShareGroup(groupId)
+    onRemoveShare(groupId)
+  }
+
+  // Is this item's locked quantity coming from a still-pending (claimed,
+  // not yet verified) round? Drives the "locked while verifying" label.
+  const isItemPendingVerification = (itemId: string): boolean =>
+    (bill?.claimedPayments || []).some(
+      (pay) => (pay.paid_item_quantities || {})[itemId] !== undefined
+    )
+
   // ============================================
-  // SHARE GROUP HELPERS
+  // SHARE GROUP HELPERS (claim state — unrelated to payment status)
   // ============================================
 
   const getItemShareGroups = (itemId: string) => {
@@ -131,8 +189,6 @@ export default function ItemTicker({
         .map((a) => a.share_group_id)
     )
 
-    // Pending shares reserve capacity: count any group with an active (pending
-    // or confirmed) member. Only a fully-rejected group frees the quantity up.
     let shareTotal = 0
     for (const groupId of shareGroupIds) {
       const members = allAssignments.filter((a) => a.share_group_id === groupId)
@@ -143,11 +199,7 @@ export default function ItemTicker({
     return solo + shareTotal
   }
 
-  // ============================================
-  // PAYMENT CALCULATION (the new model!)
-  // ============================================
-
-  // My CURRENT total bill (everything I owe right now)
+  // My CURRENT claim value for an item (for display, not payment)
   const calculateMyItemShare = (item: Item): number => {
     let total = 0
     const solo = mySolo(item.id)
@@ -162,107 +214,50 @@ export default function ItemTicker({
     return total
   }
 
-  // The UNPAID portion of an item (mine - paid)
-  // For solo claims only - shares are atomic (either paid or not)
-  const calculateUnpaidSoloShare = (item: Item): number => {
-    const totalSolo = mySolo(item.id)
-    const paidSolo = myPaidQty(item.id)
-    const unpaidSolo = Math.max(0, totalSolo - paidSolo)
-    return unpaidSolo * Number(item.price)
-  }
-
-  // Unpaid share contributions
-  const calculateUnpaidShareTotal = (): {
-    total: number
-    paidGroupIds: string[]
-  } => {
-    let total = 0
-    const newlyPaidGroupIds: string[] = []
-    items.forEach((item) => {
-      const shares = getItemShareGroups(item.id).filter(
-        (g) => g.isMine && g.allConfirmed && !g.isPaid
-      )
-      for (const g of shares) {
-        total += (g.quantity * Number(item.price)) / g.members.length
-        newlyPaidGroupIds.push(g.groupId)
-      }
-    })
-    return { total, paidGroupIds: newlyPaidGroupIds }
-  }
-
-  // Items with my pending shares - those can't be paid
+  // Items with my pending (unconfirmed) shares - those can't be paid yet
   const itemsWithMyPendingShares = new Set(
     items
       .filter((item) =>
-        getItemShareGroups(item.id).some(
-          (g) => g.isMine && !g.allConfirmed
-        )
+        getItemShareGroups(item.id).some((g) => g.isMine && !g.allConfirmed)
       )
       .map((i) => i.id)
   )
 
-  // PAYABLE: unpaid solo qty + unpaid confirmed shares
-  // Build the payment delta
-  const unpaidSoloItems: { item: Item; deltaQty: number; deltaAmount: number }[] = []
-  items.forEach((item) => {
-    if (itemsWithMyPendingShares.has(item.id)) return // skip if pending
-    const totalSolo = mySolo(item.id)
-    const paidSolo = myPaidQty(item.id)
-    const deltaQty = totalSolo - paidSolo
-    if (deltaQty > 0) {
-      unpaidSoloItems.push({
-        item,
-        deltaQty,
-        deltaAmount: deltaQty * Number(item.price),
-      })
-    }
-  })
+  // ============================================
+  // PAYMENT STATUS (aggregated across all payment rounds — see useSessionBills)
+  // ============================================
 
-  const unpaidShareInfo = calculateUnpaidShareTotal()
+  const verifiedAmount = bill?.verifiedAmount || 0
+  const pendingAmount = bill?.pendingAmount || 0
+  const unverifiedAmount = bill?.unverifiedAmount || 0
+  const overpaidAmount = bill?.overpaidAmount || 0
+  const unpaidTotal = bill?.unpaidTotal || 0
+  const unpaidSubtotal = bill?.unpaidSubtotal || 0
+  const unpaidChargeLines = bill?.unpaidChargeLines || []
 
-  // Subtotal of NEW unpaid stuff
-  const newUnpaidSubtotal =
-    unpaidSoloItems.reduce((sum, x) => sum + x.deltaAmount, 0) +
-    unpaidShareInfo.total
-
-  const totalSessionSubtotal = items.reduce((sum, item) => {
-    const claimed = getTotalClaimed(item.id)
-    const effective = Math.min(claimed, item.quantity)
-    return sum + Number(item.price) * effective
-  }, 0)
-
-  // Bill for the NEW unpaid portion (with proportional charges)
-  const appliedCharges = resolveCharges(session, charges)
-  const newBill = calculateBillWithCharges(
-    newUnpaidSubtotal,
-    totalSessionSubtotal,
-    appliedCharges
-  )
-  const newTotalToPay = roundToTwoDecimals(newBill.total)
-
-  // Payment status display
-  const paymentStatus = myPayment?.status
-  const isPaymentClaimed = paymentStatus === "claimed"
-  const isVerified = paymentStatus === "verified"
-  const isUnverified = paymentStatus === "unverified"
-  const hasPaid = (myPayment?.amount_paid || 0) > 0
+  // bill.isUnverified is true only when the MOST RECENT payment round is
+  // unverified AND there's still an outstanding balance — see
+  // useSessionBills. Older unverified history that's since been paid back,
+  // or new debt from items ticked after settling, doesn't count.
+  const isUnverified = bill?.isUnverified || false
+  const hasPaid = verifiedAmount > 0 || pendingAmount > 0
 
   const getPaymentBadge = () => {
-    if (!myPayment || !hasPaid) return null
-    if (isVerified)
-      return {
-        text: `✅ Verified - RM ${Number(myPayment.amount_paid).toFixed(2)} paid`,
-        color: "bg-green-100 text-green-800",
-      }
-    if (isPaymentClaimed)
-      return {
-        text: `⏳ Waiting verification - RM ${Number(myPayment.amount_paid).toFixed(2)}`,
-        color: "bg-yellow-100 text-yellow-800",
-      }
+    if (!bill) return null
     if (isUnverified)
       return {
-        text: "❌ Payment unverified, please pay again",
+        text: `❌ Payment of RM ${unpaidTotal.toFixed(2)} unverified, please pay again`,
         color: "bg-red-100 text-red-800",
+      }
+    if (pendingAmount > 0)
+      return {
+        text: `⏳ Waiting verification - RM ${pendingAmount.toFixed(2)}`,
+        color: "bg-yellow-100 text-yellow-800",
+      }
+    if (verifiedAmount > 0)
+      return {
+        text: `✅ Verified - RM ${verifiedAmount.toFixed(2)} paid`,
+        color: "bg-green-100 text-green-800",
       }
     return null
   }
@@ -274,32 +269,13 @@ export default function ItemTicker({
   // ============================================
 
   const handleClaimPayment = async (method: "qr" | "cash") => {
-    // Build the new quantities map: paid + new deltas
-    const newQuantities: Record<string, number> = { ...paidItemQuantities }
-    const newItemIds: string[] = [...((myPayment as any)?.paid_item_ids || [])]
-
-    unpaidSoloItems.forEach(({ item, deltaQty }) => {
-      newQuantities[item.id] = (newQuantities[item.id] || 0) + deltaQty
-      if (!newItemIds.includes(item.id)) newItemIds.push(item.id)
-    })
-
-    // For shares, also add the items to paid_item_ids
-    unpaidShareInfo.paidGroupIds.forEach((groupId) => {
-      const member = allAssignments.find(
-        (a) =>
-          a.share_group_id === groupId && a.participant_id === participant.id
-      )
-      if (member && !newItemIds.includes(member.item_id)) {
-        newItemIds.push(member.item_id)
-      }
-    })
-
+    if (!bill) return
     await onClaimPayment(
-      newTotalToPay,
+      bill.unpaidTotal,
       method,
-      newItemIds,
-      newQuantities,
-      unpaidShareInfo.paidGroupIds
+      bill.unpaidItemIds,
+      bill.unpaidItemQuantities,
+      bill.unpaidShareGroupIds
     )
   }
 
@@ -323,7 +299,6 @@ export default function ItemTicker({
         </div>
 
         {badge && (
-          
           <div className={`rounded-xl p-3 text-sm font-medium ${badge.color}`}>
             {badge.text}
           </div>
@@ -399,7 +374,7 @@ export default function ItemTicker({
                     {/* Quantity controls */}
                     <div className="flex items-center gap-2 flex-shrink-0">
                       <button
-                        onClick={() => onDecrement(item.id)}
+                        onClick={() => handleDecrement(item.id)}
                         disabled={!canDecrement}
                         className={`w-8 h-8 rounded-full font-bold text-lg flex items-center justify-center transition ${
                           isTicked
@@ -453,10 +428,17 @@ export default function ItemTicker({
                     )}
                   </div>
 
-                  {/* Paid badge (for solo) */}
+                  {/* Paid / locked badge (for solo) */}
                   {paid > 0 && (
-                    <div className={`text-xs mt-1 font-medium ${isTicked ? "text-green-300" : "text-green-600"}`}>
-                      ✓ Paid for {paid} of {mine}
+                    <div className={`text-xs mt-1 font-medium flex items-center gap-1 ${isTicked ? "text-green-300" : "text-green-600"}`}>
+                      {isItemPendingVerification(item.id) ? (
+                        <>
+                          <Lock size={11} />
+                          Locked while verifying ({paid} of {mine})
+                        </>
+                      ) : (
+                        <>✓ Paid for {paid} of {mine}</>
+                      )}
                     </div>
                   )}
 
@@ -508,9 +490,7 @@ export default function ItemTicker({
                             {/* If I initiated this share and not yet paid */}
                             {g.isInitiator && !g.allConfirmed && !g.isPaid && (
                               <button
-                                onClick={() => {
-                                  if (confirm("Remove this share?")) onRemoveShare(g.groupId)
-                                }}
+                                onClick={() => handleRemoveShareGroup(g.groupId)}
                                 className={`text-xs mt-1 underline ${isTicked ? "text-red-300" : "text-red-600"}`}
                               >
                                 Cancel share
@@ -553,7 +533,7 @@ export default function ItemTicker({
 )}
 
         {/* New unpaid bill */}
-        {newUnpaidSubtotal > 0 && (
+        {unpaidSubtotal > 0 && (
           <div className="bg-white border border-gray-200 rounded-xl p-4 space-y-3">
             <div className="text-xs text-gray-500 font-medium">
               {hasPaid ? "New items to pay" : "Your bill"}
@@ -562,11 +542,11 @@ export default function ItemTicker({
             <div className="flex justify-between text-sm">
               <span className="text-gray-600">Subtotal</span>
               <span className="font-medium text-gray-900">
-                RM {newBill.subtotal.toFixed(2)}
+                RM {unpaidSubtotal.toFixed(2)}
               </span>
             </div>
 
-            {newBill.chargeLines.map((line, i) => (
+            {unpaidChargeLines.map((line, i) => (
               <div key={i} className="flex justify-between text-sm">
                 <span className="text-gray-600">{formatChargeLabel(line)}</span>
                 <span className="font-medium text-gray-900">
@@ -578,24 +558,29 @@ export default function ItemTicker({
             <div className="border-t border-gray-200 pt-3 flex justify-between items-center">
               <span className="font-semibold text-gray-900">Total to pay</span>
               <span className="text-2xl font-bold text-gray-900">
-                RM {newTotalToPay.toFixed(2)}
+                RM {unpaidTotal.toFixed(2)}
               </span>
             </div>
           </div>
         )}
 
         {/* All settled */}
-        {hasPaid && newUnpaidSubtotal === 0 && (
+        {hasPaid && !isUnverified && unpaidTotal === 0 && (
   <div className="bg-green-50 border border-green-200 rounded-xl p-4 text-center">
     <div className="text-green-800 font-medium">You're all settled</div>
     <div className="text-green-600 text-sm mt-1">
-      Total paid: RM {Number(myPayment?.amount_paid || 0).toFixed(2)}
+      Total paid: RM {verifiedAmount.toFixed(2)}
     </div>
+    {overpaidAmount > 0 && (
+      <div className="text-green-600 text-xs mt-1">
+        Overpaid by RM {overpaidAmount.toFixed(2)}
+      </div>
+    )}
   </div>
 )}
       </div>
 
-      {newTotalToPay > 0 && (
+      {unpaidTotal > 0 && (
         <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 p-4">
           <div className="max-w-md mx-auto">
             <Button
@@ -603,8 +588,8 @@ export default function ItemTicker({
               onClick={() => setShowPayment(true)}
               className="w-full py-4 text-base"
             >
-              {hasPaid ? "Pay More" : isUnverified ? "Pay Again" : "Pay"} - RM{" "}
-              {newTotalToPay.toFixed(2)}
+              {isUnverified ? "Pay Again" : hasPaid ? "Pay More" : "Pay"} - RM{" "}
+              {unpaidTotal.toFixed(2)}
             </Button>
           </div>
         </div>
@@ -613,9 +598,9 @@ export default function ItemTicker({
       {showPayment && (
         <PaymentModal
           session={session}
-          amount={newTotalToPay}
-          subtotal={newBill.subtotal}
-          chargeLines={newBill.chargeLines}
+          amount={unpaidTotal}
+          subtotal={unpaidSubtotal}
+          chargeLines={unpaidChargeLines}
           paymentMethods={paymentMethods}
           onConfirm={handleClaimPayment}
           onClose={() => setShowPayment(false)}

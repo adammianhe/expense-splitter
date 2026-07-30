@@ -14,6 +14,7 @@ export type SessionHistoryItem = {
   sessionName: string
   role: "owner" | "friend"
   joinedAt: string
+  lastVisitedAt: string
   createdAt: string
   status: "settled" | "pending" | "active"
   outstandingAmount: number
@@ -90,6 +91,7 @@ function cachedErrorItem(stored: StoredSession): SessionHistoryItem {
     sessionName: stored.sessionName,
     role: stored.role,
     joinedAt: stored.joinedAt,
+    lastVisitedAt: stored.lastVisitedAt || stored.joinedAt,
     createdAt: stored.joinedAt,
     status: "active",
     outstandingAmount: 0,
@@ -106,6 +108,7 @@ async function fetchOne(stored: StoredSession): Promise<SessionHistoryItem> {
     sessionName: stored.sessionName,
     role: stored.role,
     joinedAt: stored.joinedAt,
+    lastVisitedAt: stored.lastVisitedAt || stored.joinedAt,
     createdAt: stored.joinedAt,
     status: "active",
     outstandingAmount: 0,
@@ -164,22 +167,27 @@ async function fetchOne(stored: StoredSession): Promise<SessionHistoryItem> {
     const totalBill =
       itemsTotal + summaryLines.reduce((s, l) => s + l.amount, 0)
 
+    // Multi-record model: a participant may have many payment rows across
+    // rounds. Any still-"claimed" (unverified-by-owner) row means the
+    // session isn't fully settled yet, even if verified sums cover the bill.
+    const hasAnyPendingPayment = payments.some((p: any) => p.status === "claimed")
+
     if (stored.role === "owner") {
       const totalVerified = payments
         .filter((p: any) => p.status === "verified")
         .reduce((s: number, p: any) => s + Number(p.amount_paid), 0)
       const outstanding = Math.max(0, totalBill - totalVerified)
+      const settled =
+        (session.status === "settled" || outstanding === 0) && !hasAnyPendingPayment
       return {
         sessionId: stored.sessionId,
         participantId: stored.participantId,
         sessionName: session.name,
         role: "owner",
         joinedAt: stored.joinedAt,
+        lastVisitedAt: stored.lastVisitedAt || stored.joinedAt,
         createdAt: session.created_at,
-        status:
-          session.status === "settled" || outstanding === 0
-            ? "settled"
-            : "pending",
+        status: settled ? "settled" : "pending",
         outstandingAmount: outstanding,
         totalAmount: totalBill,
         isStale: false,
@@ -197,17 +205,21 @@ async function fetchOne(stored: StoredSession): Promise<SessionHistoryItem> {
         totalSessionSubtotal,
         appliedCharges
       )
-      const myPayment = payments.find(
+      const myPayments = payments.filter(
         (p: any) => p.participant_id === stored.participantId
-      ) as any
-      const myVerified =
-        myPayment?.status === "verified" ? Number(myPayment.amount_paid) : 0
-      const outstanding = Math.max(0, myBill.total - myVerified)
+      )
+      const myVerified = myPayments
+        .filter((p: any) => p.status === "verified")
+        .reduce((s: number, p: any) => s + Number(p.amount_paid), 0)
+      const myPending = myPayments
+        .filter((p: any) => p.status === "claimed")
+        .reduce((s: number, p: any) => s + Number(p.amount_paid), 0)
+      const outstanding = Math.max(0, myBill.total - myVerified - myPending)
 
       let status: "settled" | "pending" | "active"
-      if (outstanding > 0) {
+      if (outstanding > 0 || myPending > 0) {
         status = "pending"
-      } else if (myPayment?.status === "verified") {
+      } else if (myVerified > 0) {
         status = "settled"
       } else {
         status = "active"
@@ -219,6 +231,7 @@ async function fetchOne(stored: StoredSession): Promise<SessionHistoryItem> {
         sessionName: session.name,
         role: "friend",
         joinedAt: stored.joinedAt,
+        lastVisitedAt: stored.lastVisitedAt || stored.joinedAt,
         createdAt: session.created_at,
         status,
         outstandingAmount: outstanding,
@@ -273,6 +286,7 @@ export function useSessionHistory() {
               role: us.role,
               sessionName: "Session",
               joinedAt: us.joined_at,
+              lastVisitedAt: us.joined_at,
             })
           }
         }
@@ -285,9 +299,11 @@ export function useSessionHistory() {
         return
       }
       const results = await Promise.all(merged.map(fetchOne))
-      results.sort(
-        (a, b) => new Date(b.joinedAt).getTime() - new Date(a.joinedAt).getTime()
-      )
+      results.sort((a, b) => {
+        const aTime = a.lastVisitedAt || a.joinedAt
+        const bTime = b.lastVisitedAt || b.joinedAt
+        return new Date(bTime).getTime() - new Date(aTime).getTime()
+      })
       setItems(results)
     } catch (e: any) {
       // Total failure (e.g. Supabase down) — fall back to cached names with fetchError

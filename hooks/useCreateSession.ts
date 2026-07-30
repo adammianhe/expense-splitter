@@ -12,6 +12,7 @@ import { addUserSession } from "@/lib/userSessionsApi"
 import { addToRetryQueue } from "@/lib/syncRetryQueue"
 import { useToast } from "@/hooks/useToast"
 import { readCreateDraft, writeCreateDraft, clearCreateDraft } from "@/lib/createDraft"
+import posthog from "posthog-js"
 
 const EMPTY_ITEM: ItemForm = { name: "", price: "", quantity: "1", priceMode: "each" }
 
@@ -319,6 +320,20 @@ if (receiptFiles.length > 0) {
       }
 
       if (itemsError) throw itemsError
+
+      try {
+        if (typeof window !== "undefined") {
+          posthog.capture("session_created", {
+            session_id: session.id,
+            item_count: items.length,
+            participant_count: participants.length,
+            has_tax: charges?.length > 0,
+            has_qr: paymentMethods?.length > 0,
+          })
+        }
+      } catch {
+        // best effort
+      }
 
       // 5. Redirect
       // BEFORE redirecting, ensure minimum 500ms loading time

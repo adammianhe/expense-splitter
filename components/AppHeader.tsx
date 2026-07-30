@@ -7,13 +7,24 @@ import { AnimatePresence } from "framer-motion"
 import { useAuth } from "@/contexts/AuthContext"
 import { useToast } from "@/hooks/useToast"
 import { Skeleton } from "@/components/ui/Skeleton"
+import { Tooltip } from "@/components/ui/Tooltip"
 import SignInModal from "@/components/SignInModal"
 import ProfileMenu from "@/components/ProfileMenu"
 import NavigationOverlay from "@/components/NavigationOverlay"
 import ToastContainer from "@/components/ui/ToastContainer"
 import { hasCreateDraft, clearCreateDraft } from "@/lib/createDraft"
 
-export default function AppHeader() {
+type Props = {
+  // Soft, client-side refresh for the home page instead of a full
+  // window.location.reload(). A hard reload re-fetches the document, HTML,
+  // JS, and web fonts from scratch — the font swap + full React remount
+  // (replaying every card's entrance animation at once) is what reads as a
+  // "shake". Reusing the same refresh() the pull-to-refresh button already
+  // uses avoids all of that.
+  onReload?: () => void
+}
+
+export default function AppHeader({ onReload }: Props = {}) {
   const router = useRouter()
   const pathname = usePathname()
   const { user, loading: authLoading, isSignedIn } = useAuth()
@@ -41,7 +52,11 @@ export default function AppHeader() {
     if (navigating) return // ignore rapid repeat taps
 
     if (pathname === "/") {
-      window.location.reload()
+      if (onReload) {
+        onReload()
+      } else {
+        window.location.reload()
+      }
       return
     }
 
@@ -105,23 +120,25 @@ export default function AppHeader() {
           {authLoading ? (
             <Skeleton className="w-8 h-8 rounded-full" />
           ) : (
-            <button
-              onClick={handleProfileClick}
-              aria-label={isSignedIn ? "Open profile menu" : "Sign in"}
-              className="flex-shrink-0 rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-black"
-            >
-              {isSignedIn ? (
-                <div className="w-8 h-8 bg-black rounded-full flex items-center justify-center">
-                  <span className="text-white font-medium text-sm select-none">
-                    {user?.email?.[0]?.toUpperCase() ?? "?"}
-                  </span>
-                </div>
-              ) : (
-                <div className="w-8 h-8 bg-gray-100 rounded-full flex items-center justify-center hover:bg-gray-200 transition">
-                  <User size={16} className="text-gray-600" />
-                </div>
-              )}
-            </button>
+            <Tooltip content="Account">
+              <button
+                onClick={handleProfileClick}
+                aria-label={isSignedIn ? "Open profile menu" : "Sign in"}
+                className="flex-shrink-0 rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-black"
+              >
+                {isSignedIn ? (
+                  <div className="w-8 h-8 bg-black rounded-full flex items-center justify-center">
+                    <span className="text-white font-medium text-sm select-none">
+                      {user?.email?.[0]?.toUpperCase() ?? "?"}
+                    </span>
+                  </div>
+                ) : (
+                  <div className="w-8 h-8 bg-gray-100 rounded-full flex items-center justify-center hover:bg-gray-200 transition">
+                    <User size={16} className="text-gray-600" />
+                  </div>
+                )}
+              </button>
+            </Tooltip>
           )}
         </div>
       </header>
@@ -142,7 +159,13 @@ export default function AppHeader() {
       <ToastContainer toasts={toasts} onDismiss={dismissToast} />
 
       <AnimatePresence>
-        {showSignIn && <SignInModal key="signin" onClose={() => setShowSignIn(false)} />}
+        {showSignIn && (
+          <SignInModal
+            key="signin"
+            onClose={() => setShowSignIn(false)}
+            onSuccess={(msg) => showToast(msg, "success")}
+          />
+        )}
       </AnimatePresence>
       <AnimatePresence>
         {showProfile && (

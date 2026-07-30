@@ -60,17 +60,64 @@ export function useItemAssignments(sessionId: string, participantId: string | nu
   // SOLO CLAIMS
   // ============================================
 
+  // Patches the LOCAL allAssignments array to match a solo qty change. This
+  // matters because useSessionBills computes bill totals from
+  // `allAssignments`, not `soloQty` — without this, the item's own +/-
+  // counter feels instant (soloQty is optimistic) but "Total to pay" lags a
+  // full DB round-trip behind, since it was only ever refreshed by the
+  // realtime echo from loadAssignments().
+  const patchAssignmentsForSolo = (
+    prev: any[],
+    itemId: string,
+    newQty: number
+  ): any[] => {
+    const idx = prev.findIndex(
+      (a) =>
+        a.item_id === itemId &&
+        a.participant_id === participantId &&
+        a.share_group_id === null
+    )
+    if (newQty <= 0) {
+      if (idx === -1) return prev
+      const next = [...prev]
+      next.splice(idx, 1)
+      return next
+    }
+    if (idx === -1) {
+      return [
+        ...prev,
+        {
+          id: `optimistic-${itemId}-${participantId}`,
+          item_id: itemId,
+          participant_id: participantId,
+          assigned_by_participant_id: participantId,
+          status: "confirmed",
+          quantity: newQty,
+          share_group_id: null,
+        },
+      ]
+    }
+    const next = [...prev]
+    next[idx] = { ...next[idx], quantity: newQty }
+    return next
+  }
+
   const setSoloItemQty = async (itemId: string, newQty: number) => {
     if (!participantId) return
 
     const currentQty = soloQty.get(itemId) || 0
     if (newQty === currentQty) return
 
-    // Optimistic UI
+    // Optimistic UI — both soloQty (item counter) and allAssignments (bill
+    // totals) update immediately; the realtime echo will reconcile them
+    // with the real row once the write lands.
     const newMap = new Map(soloQty)
     if (newQty <= 0) newMap.delete(itemId)
     else newMap.set(itemId, newQty)
     setSoloQty(newMap)
+
+    const previousAssignments = allAssignments
+    setAllAssignments((prev) => patchAssignmentsForSolo(prev, itemId, newQty))
 
     if (newQty <= 0) {
       // Delete solo assignment (only the solo row, not share rows)
@@ -85,6 +132,7 @@ export function useItemAssignments(sessionId: string, participantId: string | nu
         const reverted = new Map(newMap)
         reverted.set(itemId, currentQty)
         setSoloQty(reverted)
+        setAllAssignments(previousAssignments)
         alert("Error: " + error.message)
       }
     } else if (currentQty === 0) {
@@ -102,6 +150,7 @@ export function useItemAssignments(sessionId: string, participantId: string | nu
         const reverted = new Map(newMap)
         reverted.delete(itemId)
         setSoloQty(reverted)
+        setAllAssignments(previousAssignments)
         alert("Error: " + error.message)
       }
     } else {
@@ -117,6 +166,7 @@ export function useItemAssignments(sessionId: string, participantId: string | nu
         const reverted = new Map(newMap)
         reverted.set(itemId, currentQty)
         setSoloQty(reverted)
+        setAllAssignments(previousAssignments)
         alert("Error: " + error.message)
       }
     }

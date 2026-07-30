@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { Lightbulb, X } from "lucide-react"
+import { Save, X } from "lucide-react"
 import { motion } from "framer-motion"
 
 const DISMISS_KEY = "splitto:sign_in_banner_dismissed"
@@ -40,16 +40,16 @@ export default function SignInBanner({ onSignInClick }: Props) {
       exit={{ opacity: 0, y: -10 }}
       className="bg-blue-50 border border-blue-200 rounded-xl p-4 flex items-start gap-3 mt-6"
     >
-      <Lightbulb size={18} className="text-blue-600 flex-shrink-0 mt-0.5" />
+      <Save size={18} className="text-blue-600 flex-shrink-0 mt-0.5" />
       <div className="flex-1">
-        <p className="text-sm text-blue-900 font-medium">Save your history across devices</p>
-        <p className="text-xs text-blue-700 mt-1 mb-3">Sign in with email to sync your sessions.</p>
+        <p className="text-sm text-blue-900 font-medium">Sessions saved on this device only</p>
+        <p className="text-xs text-blue-700 mt-1 mb-3">Sign in to sync across devices.</p>
         <div className="flex gap-3">
           <button
             onClick={onSignInClick}
             className="text-sm font-medium text-blue-700 hover:text-blue-900"
           >
-            Sign In
+            Sign in to sync
           </button>
           <button
             onClick={handleDismiss}

@@ -4,6 +4,8 @@ import { Inter } from "next/font/google"
 import "./globals.css";
 import { AuthProvider } from "@/contexts/AuthContext"
 import SyncManager from "@/components/SyncManager"
+import PostHogProvider from "@/providers/PostHogProvider"
+import ErrorBoundary from "@/components/ErrorBoundary"
 
 const inter = Inter({
   subsets: ["latin"],
@@ -23,7 +25,7 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: "Splitto - Split Bills, No Drama",
-  description: "Split bills with friends fairly. No login, no install, just share a link.",
+  description: "Split bills with friends fairly. No install, just share a link.",
   applicationName: "Splitto",
   manifest: "/manifest.json",
   appleWebApp: {
@@ -62,10 +64,14 @@ export default function RootLayout({
   return (
   <html lang="en" className={inter.variable}>
     <body>
-      <AuthProvider>
-        <SyncManager />
-        {children}
-      </AuthProvider>
+      <PostHogProvider>
+        <ErrorBoundary>
+          <AuthProvider>
+            <SyncManager />
+            {children}
+          </AuthProvider>
+        </ErrorBoundary>
+      </PostHogProvider>
     </body>
   </html>
 );
