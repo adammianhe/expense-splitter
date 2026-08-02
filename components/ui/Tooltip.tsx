@@ -25,6 +25,12 @@ export function Tooltip({ content, children, position = "top" }: Props) {
   const triggerRef = useRef<HTMLDivElement>(null)
 
   const handleEnter = () => {
+    // Touch devices synthesize a mouseenter on tap but never fire
+    // mouseleave, so the tooltip would stick until the next unrelated tap.
+    // Only real hover-capable pointers (mouse/trackpad) get the tooltip.
+    if (typeof window !== "undefined" && !window.matchMedia("(hover: hover) and (pointer: fine)").matches) {
+      return
+    }
     const el = triggerRef.current
     if (!el) return
     const rect = el.getBoundingClientRect()
@@ -60,6 +66,7 @@ export function Tooltip({ content, children, position = "top" }: Props) {
       className="relative inline-flex"
       onMouseEnter={handleEnter}
       onMouseLeave={() => setShow(false)}
+      onClick={() => setShow(false)}
     >
       {children}
       {typeof document !== "undefined" &&

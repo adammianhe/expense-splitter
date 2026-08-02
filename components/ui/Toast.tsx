@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect } from "react"
 
 export type ToastAction = {
   label: string
@@ -21,18 +21,8 @@ type Props = {
 }
 
 export default function Toast({ toast, onDismiss }: Props) {
-  const [visible, setVisible] = useState(false)
-
   useEffect(() => {
-    // Slide in
-    setTimeout(() => setVisible(true), 10)
-
-    // Auto dismiss
-    const timer = setTimeout(() => {
-      setVisible(false)
-      setTimeout(() => onDismiss(toast.id), 300)
-    }, toast.duration ?? 3500)
-
+    const timer = setTimeout(() => onDismiss(toast.id), toast.duration ?? 3500)
     return () => clearTimeout(timer)
   }, [toast.id, toast.duration, onDismiss])
 
@@ -45,29 +35,22 @@ export default function Toast({ toast, onDismiss }: Props) {
 
   return (
     <div
-      className={`transition-all duration-300 ${
-        visible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-3"
+      className={`px-4 py-3 rounded-lg border shadow-lg text-sm font-medium flex items-center justify-between gap-3 ${
+        colors[toast.type || "info"]
       }`}
     >
-      <div
-        className={`px-4 py-3 rounded-lg border shadow-lg text-sm font-medium flex items-center justify-between gap-3 ${
-          colors[toast.type || "info"]
-        }`}
-      >
-        <span className="min-w-0">{toast.text}</span>
-        {toast.action && (
-          <button
-            onClick={() => {
-              toast.action!.onClick()
-              setVisible(false)
-              setTimeout(() => onDismiss(toast.id), 300)
-            }}
-            className="flex-shrink-0 text-sm font-semibold underline hover:no-underline px-2 py-2.5 -my-2.5 -mr-2"
-          >
-            {toast.action.label}
-          </button>
-        )}
-      </div>
+      <span className="min-w-0">{toast.text}</span>
+      {toast.action && (
+        <button
+          onClick={() => {
+            toast.action!.onClick()
+            onDismiss(toast.id)
+          }}
+          className="flex-shrink-0 text-sm font-semibold underline hover:no-underline px-2 py-2.5 -my-2.5 -mr-2"
+        >
+          {toast.action.label}
+        </button>
+      )}
     </div>
   )
 }

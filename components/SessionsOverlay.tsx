@@ -197,15 +197,15 @@ export default function SessionsOverlay({
       >
         {/* Fixed header */}
         <div className="flex-shrink-0 border-b border-gray-100 p-4 sm:p-6 space-y-4">
-          <div className="flex items-start justify-between">
+          <div className="flex items-center justify-between">
             <h2 className="text-xl font-bold text-gray-900">Your Sessions</h2>
             <Tooltip content="Close">
               <button
                 onClick={onClose}
                 aria-label="Close"
-                className="text-gray-400 hover:text-gray-600 transition ml-4"
+                className="text-gray-400 hover:text-gray-600 transition -mr-2 p-2.5 rounded-full hover:bg-gray-100"
               >
-                <X size={22} />
+                <X size={20} />
               </button>
             </Tooltip>
           </div>
@@ -214,20 +214,20 @@ export default function SessionsOverlay({
           <div className="relative">
             <Search
               size={16}
-              className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"
+              className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400"
             />
             <input
               type="text"
               value={rawQuery}
               onChange={(e) => setRawQuery(e.target.value)}
               placeholder="Search sessions..."
-              className="w-full pl-9 pr-9 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-black"
+              className="w-full pl-10 pr-9 py-3 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-black"
             />
             {rawQuery && (
               <button
                 onClick={() => setRawQuery("")}
                 aria-label="Clear search"
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 p-1"
               >
                 <X size={14} />
               </button>
@@ -235,13 +235,14 @@ export default function SessionsOverlay({
           </div>
 
           {/* Filters */}
-          <div className="flex flex-wrap items-center gap-2">
-            <div className="flex gap-1.5">
+          <div className="space-y-2">
+            {/* Row 1: status chips */}
+            <div className="flex gap-1.5 overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0">
               {STATUS_OPTIONS.map((opt) => (
                 <button
                   key={opt.value}
                   onClick={() => setStatusFilter(opt.value)}
-                  className={`px-3 py-1.5 rounded-full text-xs font-medium transition ${
+                  className={`flex-shrink-0 px-3 py-1.5 rounded-full text-xs font-medium transition ${
                     statusFilter === opt.value
                       ? "bg-black text-white"
                       : "bg-gray-100 text-gray-600 hover:bg-gray-200"
@@ -252,26 +253,29 @@ export default function SessionsOverlay({
               ))}
             </div>
 
-            <select
-              value={timeFilter}
-              onChange={(e) => setTimeFilter(e.target.value as TimeFilter)}
-              className="ml-auto sm:ml-2 px-2.5 py-1.5 rounded-lg text-xs font-medium bg-gray-100 text-gray-600 border-none focus:outline-none focus:ring-1 focus:ring-black"
-            >
-              <option value="all">All time</option>
-              <option value="week">This week</option>
-              <option value="month">This month</option>
-              <option value="year">This year</option>
-            </select>
+            {/* Row 2: time + sort, equal width */}
+            <div className="flex gap-2">
+              <select
+                value={timeFilter}
+                onChange={(e) => setTimeFilter(e.target.value as TimeFilter)}
+                className="flex-1 min-w-0 px-3 py-2 rounded-lg text-xs font-medium bg-gray-100 text-gray-600 border-none focus:outline-none focus:ring-1 focus:ring-black"
+              >
+                <option value="all">All time</option>
+                <option value="week">This week</option>
+                <option value="month">This month</option>
+                <option value="year">This year</option>
+              </select>
 
-            <select
-              value={sortBy}
-              onChange={(e) => setSortBy(e.target.value as SortOption)}
-              className="px-2.5 py-1.5 rounded-lg text-xs font-medium bg-gray-100 text-gray-600 border-none focus:outline-none focus:ring-1 focus:ring-black"
-            >
-              <option value="recent">Recent</option>
-              <option value="oldest">Oldest</option>
-              <option value="alphabetical">A-Z</option>
-            </select>
+              <select
+                value={sortBy}
+                onChange={(e) => setSortBy(e.target.value as SortOption)}
+                className="flex-1 min-w-0 px-3 py-2 rounded-lg text-xs font-medium bg-gray-100 text-gray-600 border-none focus:outline-none focus:ring-1 focus:ring-black"
+              >
+                <option value="recent">Recent</option>
+                <option value="oldest">Oldest</option>
+                <option value="alphabetical">A-Z</option>
+              </select>
+            </div>
           </div>
         </div>
 
